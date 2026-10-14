@@ -17,6 +17,9 @@ check_central() {
   echo "Central did not recover" >&2
   return 1
 }
+adb shell input keyevent 223
+sleep 10
+check_central
 # The activity is already closed. Kill the process without force-stop so START_STICKY may recover.
 pid=$(adb shell pidof br.eng.thsouza.winterhold | tr -d '\r')
 adb shell run-as br.eng.thsouza.winterhold kill -9 "$pid"

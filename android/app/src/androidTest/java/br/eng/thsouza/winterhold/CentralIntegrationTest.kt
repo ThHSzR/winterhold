@@ -36,11 +36,12 @@ class CentralIntegrationTest {
 
     private fun awaitCondition(check: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 15_000
+        var lastError: Throwable? = null
         while (System.currentTimeMillis() < deadline) {
-            if (runCatching(check).getOrDefault(false)) return
+            if (runCatching(check).onFailure { lastError = it }.getOrDefault(false)) return
             Thread.sleep(100)
         }
-        fail("Central não atingiu o estado esperado")
+        throw AssertionError("Central não atingiu o estado esperado: ${DemoCentral.status}", lastError)
     }
 
     @Test fun servesDirectIpWithoutKeyPersistsAndSurvivesClosingActivity() {

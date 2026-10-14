@@ -9,6 +9,7 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <application
         android:allowBackup="false"
+        android:usesCleartextTraffic="true"
         android:label="Winterhold"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
