@@ -38,8 +38,13 @@ sleep 10
 echo "Checking central with activity closed and screen off"
 check_central
 # The activity is already closed. Kill the process without force-stop so START_STICKY may recover.
+# Use the userdebug emulator's shell to simulate a system process kill. Android 11's
+# run-as domain cannot reliably see/signall the app PID through its restricted /proc.
+adb root
+adb wait-for-device
 pid=$(adb shell pidof br.eng.thsouza.winterhold | tr -d '\r')
-adb shell run-as br.eng.thsouza.winterhold kill -9 "$pid"
+adb shell kill -9 "$pid"
+adb forward tcp:18790 tcp:8790
 echo "Checking START_STICKY process recovery and saved settings"
 check_central
 # A real reboot exercises the system BOOT_COMPLETED broadcast, without reopening the app.
