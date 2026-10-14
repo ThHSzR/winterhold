@@ -663,7 +663,7 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
             PanelCard {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SectionTitle("Integrações futuras")
-                    LinkRow("ESP32", "HTTP POST pela rede local")
+                    LinkRow("ESP32", "MQTT recebido pelo celular")
                     LinkRow("Persistência", "SQLite")
                     LinkRow("SMS", "Compatibilidade a validar")
                     LinkRow("E-mail", "Provedor autenticado")

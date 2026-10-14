@@ -15,7 +15,7 @@
 
 | Situação | Resposta visual no demo | Evolução planejada |
 | --- | --- | --- |
-| Leitura normal | Painel apresenta 3 grandezas e horário da amostra. | Recepção periódica de JSON do ESP32. |
+| Leitura normal | Painel apresenta 3 grandezas e horário da amostra. | Recepção periódica de mensagens MQTT do ESP32 pelo celular. |
 | Sem comunicação | Selo `SEM SINAL` e evento na lista; gráfico mantém última amostra. | Timeout de amostras e reconexão. |
 | Limite violado | Evento aberto com grandeza, severidade e detalhes. | Avaliação com histerese e deduplicação. |
 | Evento resolvido | Cartão marcado como resolvido, preservado no histórico. | Persistência e trilha de auditoria. |
@@ -26,7 +26,7 @@
 
 | Integração | Representação atual | Implementação futura |
 | --- | --- | --- |
-| ESP32 → Android | Cartão de conectividade e amostras fictícias. | Endpoint HTTP local, autenticação, validação e controle de perda de sinal. |
+| ESP32 → Android | Cartão de conectividade e amostras fictícias. | Cliente MQTT no celular, autenticação, validação e controle de perda de sinal. |
 | Histórico | Gráfico e lista em memória. | SQLite, retenção e consulta por período. |
 | Temperatura e umidade | Leitura fictícia DHT22. | Amostras reais, calibração e validação de sensor. |
 | Tensão | Leitura RMS fictícia. | Medição isolada, calibrada e supervisionada. |
@@ -42,7 +42,7 @@ O `DemoStore` cria 36 amostras históricas e três eventos iniciais. Com simula�
 
 1. Formalizar o contrato JSON, identificação da sala/dispositivo e estados de erro.
 2. Separar `DemoStore` de uma camada de repositório real e persistir as medições.
-3. Implementar o receptor local e testes de perda/retorno de comunicação.
+3. Implementar o cliente MQTT no celular e testes de perda/retorno de comunicação.
 4. Validar limiares com a equipe e implementar regras, histerese e deduplicação.
 5. Integrar e testar cada canal de aviso separadamente, com confirmação de entrega e segurança dos segredos.
 
