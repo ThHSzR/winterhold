@@ -1,5 +1,7 @@
 # Winterhold
 
+> **Protótipo Android:** a branch [`APK`](https://github.com/ThHSzR/winterhold/tree/APK/android) contém o aplicativo Kotlin/Jetpack Compose em modo demo. Veja o [plano visual](docs/PLANO_VISUAL_APK.md) e as [instruções de execução](android/README.md). Nenhuma integração real está ativa nesta etapa.
+
 Sistema embarcado para **monitoramento de ambientes climatizados**. Um ESP32 coleta temperatura, umidade relativa e tensão elétrica; um aplicativo Android recebe as medições, mantém um histórico local, mostra o estado do ambiente e gera alertas conforme regras configuradas.
 
 > **Estado do projeto:** especificação e planejamento. Este repositório ainda não contém firmware, aplicativo ou montagem validada. Os exemplos abaixo são propostas de interface para orientar a implementação.
