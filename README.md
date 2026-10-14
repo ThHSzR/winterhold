@@ -2,9 +2,11 @@
 
 > **Protótipo Android:** a branch [`APK`](https://github.com/ThHSzR/winterhold/tree/APK/android) contém o aplicativo Kotlin/Jetpack Compose em modo demo. Veja o [plano visual](docs/PLANO_VISUAL_APK.md) e as [instruções de execução](android/README.md). Nenhuma integração real está ativa nesta etapa.
 
+> **Interface web:** a branch [`APK`](https://github.com/ThHSzR/winterhold/tree/APK/web) também contém uma demo responsiva para navegador. Veja o [guia web](web/README.md) e o [plano de integração](docs/PLANO_WEB.md). As leituras, serviços, eventos e rotas de aviso são fictícios.
+
 Sistema embarcado para **monitoramento de ambientes climatizados**. Um ESP32 coleta temperatura, umidade relativa e tensão elétrica; um aplicativo Android recebe as medições, mantém um histórico local, mostra o estado do ambiente e gera alertas conforme regras configuradas.
 
-> **Estado do projeto:** especificação e planejamento. Este repositório ainda não contém firmware, aplicativo ou montagem validada. Os exemplos abaixo são propostas de interface para orientar a implementação.
+> **Estado do projeto:** especificação e demos de interface Android/web. Firmware, MQTT, persistência, notificações reais e montagem ainda não foram validados. Os exemplos abaixo orientam a implementação.
 
 ## Objetivo
 
@@ -18,15 +20,16 @@ Nesta primeira versão, **automação** significa coleta, análise, registro e d
 flowchart LR
     DHT["DHT22<br/>temperatura e umidade"] --> ESP["ESP32<br/>aquisição e firmware"]
     ZMPT["Módulo de tensão AC<br/>medição condicionada"] --> ESP
-    ESP -->|JSON via rede local| APP["Tablet Android<br/>recepção e regras"]
+    ESP -->|MQTT via rede local| APP["Celular Android<br/>recepção e regras"]
     APP --> DB["SQLite<br/>histórico"]
     APP --> DASH["Dashboard e alertas"]
+    APP --> WEB["API autenticada → interface web"]
     APP --> SMS["SMS, se suportado"]
     APP --> MAIL["E-mail, com internet"]
     APP --> WA["WhatsApp: abrir mensagem<br/>ou integração futura"]
 ```
 
-O ESP32 e o tablet devem compartilhar uma rede local: ponto de acesso do tablet ou rede da instalação. O aplicativo Android é a central de processamento e pode usar a conexão móvel do tablet para os canais que dependem de internet. Queda do Wi-Fi local impede novas leituras mesmo que o chip SIM continue conectado.
+O ESP32 e o celular devem compartilhar uma rede local ou ter conectividade adequada ao broker MQTT. O Android será a central de processamento e disponibilizará uma API autenticada à web. A arquitetura de rede, a autenticação e o comportamento após perda de conexão serão validados na integração.
 
 | Camada | Responsabilidade proposta |
 | --- | --- |
@@ -39,7 +42,7 @@ O ESP32 e o tablet devem compartilhar uma rede local: ponto de acesso do tablet 
 ## Escopo da V1
 
 - Aquisição de temperatura, umidade e tensão pelo ESP32.
-- Envio periódico das leituras para um endpoint local no tablet.
+- Publicação periódica das leituras via MQTT para a central no celular.
 - Persistência e visualização do histórico no Android.
 - Regras configuráveis para temperatura alta, umidade alta, subtensão, sobretensão e ausência de leituras.
 - Perfil de contatos por variável monitorada e canal de aviso.
@@ -50,8 +53,8 @@ Os valores de exemplo do documento (26 °C, 70% e tensão fora de ±10% da nomin
 ### Contrato de dados inicial (proposta)
 
 ```http
-POST /api/v1/leituras HTTP/1.1
-Content-Type: application/json
+Tópico MQTT proposto: winterhold/sala-01/leituras
+Payload: application/json
 ```
 
 ```json
@@ -64,7 +67,7 @@ Content-Type: application/json
 }
 ```
 
-Os nomes dos campos, autenticação, frequência de envio e política de reenvio serão fechados junto com o firmware e o aplicativo. O horário é ilustrativo; o formato UTC é a convenção proposta. O endpoint local da especificação usa a porta `8080`, sujeita a configuração na implementação.
+Os nomes dos campos, autenticação, frequência de envio e política de reenvio serão fechados junto com o firmware e o aplicativo. O horário é ilustrativo; o formato UTC é a convenção proposta. A porta `8080` do endpoint HTTP na especificação original será revista para o desenho MQTT e API web.
 
 ## Notificações: critérios de implementação
 
@@ -125,12 +128,13 @@ Antes da compra e montagem, validar:
 winterhold/
 ├── firmware/          # ESP32
 ├── android/           # aplicativo central
+├── web/               # interface demo
 ├── hardware/          # esquemas, lista de materiais e ensaios
 ├── docs/              # protocolo, arquitetura e validação
 └── README.md
 ```
 
-Esta árvore é uma proposta, ainda não criada.
+As pastas `android/`, `web/` e `docs/` já existem na branch `APK`; as demais seguem previstas.
 
 ## Equipe e referência
 

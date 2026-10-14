@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#081923">
+  <meta name="description" content="Winterhold: demonstração do painel de monitoramento de ambientes climatizados.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <title>Winterhold · Central demo</title>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Navegação principal">
+      <a class="brand" href="#inicio" aria-label="Winterhold, início">
+        <span class="brand-mark">W</span>
+        <span><strong>WINTERHOLD</strong><small>CENTRAL DE MONITORAMENTO</small></span>
+      </a>
+      <div class="sidebar-group-label">PAINEL</div>
+      <nav class="side-nav" id="side-nav"></nav>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-note"><span class="pulse"></span><strong>DEMONSTRAÇÃO</strong><span>Sem conexão com sensores</span></div>
+      <div class="sidebar-footer">Protótipo visual · v0.1</div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <a class="mobile-brand" href="#inicio"><span class="brand-mark">W</span><strong>WINTERHOLD</strong></a>
+        <div class="topbar-context"><span class="eyebrow">CENTRAL / SALA 01</span><span id="page-heading">Visão geral</span></div>
+        <div class="topbar-right"><span class="header-date" id="header-date"></span><a class="settings-shortcut" href="#ajustes" aria-label="Abrir ajustes">⚙</a><span class="demo-badge"><span class="pulse"></span>MODO DEMO</span></div>
+      </header>
+      <main id="app-content" tabindex="-1"></main>
+      <footer class="page-footer">Winterhold · Interface de demonstração. Nenhum dado real é recebido e nenhuma mensagem é enviada.</footer>
+    </div>
+  </div>
+  <nav class="bottom-nav" id="bottom-nav" aria-label="Navegação para celular"></nav>
+  <div id="dialog-root"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
