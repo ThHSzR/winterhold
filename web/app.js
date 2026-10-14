@@ -4,6 +4,8 @@ import {
 } from './demo.js';
 
 const state = createDemoState();
+const apiKey = new URLSearchParams(location.search).get('key');
+let backend = 'loading';
 const pages = {
   inicio: ['Visão geral', 'home'],
   historico: ['Histórico', 'history'],
@@ -18,6 +20,65 @@ let dialog = null;
 let lastFocused = null;
 const content = document.querySelector('#app-content');
 const dialogRoot = document.querySelector('#dialog-root');
+const connectionBanner = document.querySelector('#connection-banner');
+
+function connectionError(message) {
+  backend = 'error';
+  connectionBanner.hidden = false;
+  connectionBanner.textContent = message;
+  content.innerHTML = `<div class="card empty">${escapeHtml(message)}</div>`;
+}
+async function refreshFromApk() {
+  try {
+    const response = await fetch('/api/v1/state', {
+      headers: { 'X-Winterhold-Key': apiKey }, cache: 'no-store'
+    });
+    if (!response.ok) throw new Error(`Central indisponível (${response.status})`);
+    Object.assign(state, await response.json());
+    backend = 'android';
+    connectionBanner.hidden = true;
+    if (!dialog) render();
+  } catch (error) {
+    connectionError(`Conexão com o APK perdida. ${error.message}`);
+  }
+}
+async function sendAction(payload, previewAction) {
+  if (backend === 'android') {
+    try {
+      const response = await fetch('/api/v1/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Winterhold-Key': apiKey },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error((await response.json()).error || `Erro ${response.status}`);
+      Object.assign(state, await response.json());
+      connectionBanner.hidden = true;
+    } catch (error) {
+      connectionBanner.hidden = false;
+      connectionBanner.textContent = `Ação não aplicada no APK: ${error.message}`;
+      return false;
+    }
+  } else if (backend === 'preview') previewAction();
+  else return false;
+  render();
+  return true;
+}
+async function boot() {
+  content.innerHTML = '<div class="card empty">Conectando à central…</div>';
+  try {
+    const response = await fetch('/healthz', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Servidor indisponível');
+    const health = await response.json();
+    if (health.mode === 'android-demo') {
+      if (!apiKey) return connectionError('Abra o endereço completo mostrado em Ajustes no APK, incluindo a chave de acesso.');
+      document.querySelector('.page-footer').textContent = 'Winterhold · Dados demo compartilhados com o APK. Saúde do celular medida no Android.';
+      await refreshFromApk();
+    } else if (health.mode === 'demo') {
+      backend = 'preview';
+      render();
+    } else connectionError('Servidor Winterhold desconhecido.');
+  } catch (error) { connectionError(`Não foi possível acessar a central: ${error.message}`); }
+}
 
 const paths = {
   home: '<path d="m3 10 9-7 9 7v10H3z"/><path d="M9 20v-7h6v7"/>',
@@ -107,20 +168,20 @@ function overview() {
         <section class="card card-pad status-list">
           <div class="status-row"><span class="status-dot ${state.offline ? 'offline' : state.running ? '' : 'idle'}"></span><div><strong>ESP32 → celular</strong><small>Conexão local simulada</small></div><span class="status-right">${state.offline ? 'Sem sinal (demo)' : state.running ? 'Simulando' : 'Pausado'}</span></div>
           <div class="divider"></div>
-          <div class="status-row"><span class="circle-icon">${icon('database')}</span><div><strong>Histórico</strong><small>Somente na memória do navegador</small></div><span class="status-right">${state.samples.length} amostras</span></div>
+          <div class="status-row"><span class="circle-icon">${icon('database')}</span><div><strong>Histórico</strong><small>${backend === 'android' ? 'Na memória do aplicativo' : 'Na memória do navegador'}</small></div><span class="status-right">${state.samples.length} amostras</span></div>
           <div class="integration-mini"><span>MQTT · futuro</span><span>API · futuro</span><span>SQLite · futuro</span></div>
         </section></div>
       <div>${section('Eventos recentes', '<a class="subtle-link" href="#alertas">Ver todos →</a>')}
         <section class="card card-pad events-list">${rows}</section></div>
     </div>
-    ${section('Saúde do celular central', '<span class="tag">DADOS FICTÍCIOS</span>')}
-    <section class="card card-pad device-health" aria-label="Saúde demonstrativa do celular central">
-      <div><span>Bateria</span><strong>${device.battery}%</strong></div>
-      <div><span>CPU</span><strong>${device.cpu}%</strong></div>
-      <div><span>Memória</span><strong>${device.memory}%</strong></div>
-      <div><span>Armazenamento</span><strong>${device.storage}%</strong></div>
+    ${section('Saúde do celular central', `<span class="tag">${backend === 'android' ? 'MEDIDA PELO APK' : 'DADOS FICTÍCIOS'}</span>`)}
+    <section class="card card-pad device-health" aria-label="Saúde do celular central">
+      <div><span>Bateria</span><strong>${device.battery == null ? '—' : `${device.battery}%`}</strong></div>
+      <div><span>Memória</span><strong>${device.memory == null ? '—' : `${device.memory}%`}</strong></div>
+      <div><span>Armazenamento</span><strong>${device.storage == null ? '—' : `${device.storage}%`}</strong></div>
+      <div><span>Tempo ligado</span><strong>${escapeHtml(device.uptime)}</strong></div>
     </section>
-    <p class="muted-note">A saúde do celular é ilustrativa nesta versão. O APK será a central MQTT e de operações; a web apresentará seus dados por API autenticada quando essa integração existir.</p>`;
+    <p class="muted-note">${backend === 'android' ? 'Leituras e eventos fictícios vêm do mesmo estado demo do APK. A saúde do celular é medida pelo Android.' : 'Prévia independente em Node. Abra o endereço exibido no APK para acessar o estado da central.'} MQTT, SQLite e envio de mensagens ainda não estão integrados.</p>`;
 }
 function metricCard(key, value, hint) {
   const iconName = key === 'humidity' ? 'drop' : 'bolt';
@@ -134,7 +195,7 @@ function historyPage() {
   const rows = samples.slice(0, 24).map(sample => `<tr><td>${dateTime(sample.time)}</td><td>${selected.label}</td><td>${decimal(sample[metric])} ${selected.unit}</td></tr>`).join('');
   const filters = Object.entries(METRICS).map(([key, value]) =>
     `<button class="chip ${key === metric ? 'active' : ''}" data-action="metric" data-metric="${key}" aria-pressed="${key === metric}">${value.label}</button>`).join('');
-  return `${pageHead('LEITURAS / HISTÓRICO', 'Histórico', 'Amostras geradas neste navegador · não persistidas')}
+  return `${pageHead('LEITURAS / HISTÓRICO', 'Histórico', backend === 'android' ? 'Amostras fictícias geradas no APK · não persistidas' : 'Amostras geradas neste navegador · não persistidas')}
     <div class="chip-row" role="group" aria-label="Variável do histórico">${filters}</div>
     ${section('Tendência demonstrativa')}
     <section class="card chart-card"><div class="chart-head"><span class="kicker">${selected.label.toUpperCase()}</span><strong>${decimal(samples[0][metric])} <small>${selected.unit}</small></strong></div>
@@ -212,9 +273,10 @@ function settingsPage() {
     </section>
     ${section('Integrações futuras')}
     <div class="integration-grid">${integrations}</div>
-    <p class="muted-note">O navegador não acessará o broker MQTT diretamente. O celular receberá as mensagens dos ESPs, processará as regras e servirá dados à web por uma API autenticada.</p>`;
+    <p class="muted-note">${backend === 'android' ? 'A página consulta a API demo do APK e compartilha as ações simuladas com ele.' : 'Esta prévia Node tem estado independente; abra o endereço do APK para usar a central.'} O recebimento MQTT e a API de produção ficam para a próxima fase.</p>`;
 }
 function render() {
+  if (backend === 'loading' || backend === 'error') return;
   const page = currentPage();
   document.querySelector('#side-nav').innerHTML = Object.keys(pages).map(p => navItem(p)).join('');
   document.querySelector('#bottom-nav').innerHTML = mainPages.map(p => navItem(p, true)).join('');
@@ -274,7 +336,7 @@ function renderDialog() {
   }
 }
 
-document.addEventListener('click', e => {
+document.addEventListener('click', async e => {
   const target = e.target.closest('[data-action]');
   if (!target) return;
   const action = target.dataset.action;
@@ -286,21 +348,47 @@ document.addEventListener('click', e => {
   if (action === 'edit-contact') { openDialog('edit-contact', target.dataset.id); return; }
   if (action === 'metric') { metric = target.dataset.metric; render(); return; }
   if (action === 'alert-filter') { alertFilter = target.dataset.filter; render(); return; }
-  if (action === 'create-alert') { simulateAlert(state, target.dataset.metric); closeDialog(); render(); location.hash = 'alertas'; return; }
-  if (action === 'resolve') { resolveAlert(state, target.dataset.id); render(); return; }
+  if (action === 'create-alert') {
+    if (await sendAction({ type: 'simulateAlert', metric: target.dataset.metric },
+      () => simulateAlert(state, target.dataset.metric))) {
+      closeDialog(); render(); location.hash = 'alertas';
+    }
+    return;
+  }
+  if (action === 'resolve') {
+    await sendAction({ type: 'resolveAlert', id: target.dataset.id },
+      () => resolveAlert(state, target.dataset.id));
+    return;
+  }
   if (action === 'save-contact') {
     try {
-      addContact(state, dialogRoot.querySelector('#new-name').value, dialogRoot.querySelector('#new-role').value);
-      closeDialog(); render();
+      const name = dialogRoot.querySelector('#new-name').value;
+      const role = dialogRoot.querySelector('#new-role').value;
+      if (!name.trim()) throw new Error('Informe um nome.');
+      if (await sendAction({ type: 'addContact', name, role }, () => addContact(state, name, role))) {
+        closeDialog(); render();
+      }
     } catch (error) {
       dialogRoot.querySelector('#new-name').setCustomValidity(error.message);
       dialogRoot.querySelector('#new-name').reportValidity();
     }
   }
 });
-document.addEventListener('change', e => {
+document.addEventListener('change', async e => {
   const target = e.target;
   const action = target.dataset.action;
+  if (backend === 'android') {
+    const payload = ({
+      running: () => ({ type: 'running', value: target.checked }),
+      offline: () => ({ type: 'offline', value: target.checked }),
+      channel: () => ({ type: 'channel', channel: target.dataset.channel, value: target.checked }),
+      'contact-active': () => ({ type: 'contactActive', id: target.dataset.id, value: target.checked }),
+      'contact-item': () => ({ type: 'contactItem', id: target.dataset.id, group: target.dataset.group, value: target.dataset.value }),
+      limit: () => ({ type: 'limit', key: target.dataset.key, value: Number(target.value) })
+    })[action]?.();
+    if (payload) { await sendAction(payload, () => {}); render(); }
+    return;
+  }
   if (action === 'running') state.running = target.checked;
   else if (action === 'offline') setOffline(state, target.checked);
   else if (action === 'channel') {
@@ -331,5 +419,9 @@ window.addEventListener('hashchange', () => {
   window.scrollTo({ top: 0, behavior: 'auto' });
   content.focus({ preventScroll: true });
 });
-setInterval(() => { if (advance(state) && !dialog) render(); }, 5_000);
-render();
+setInterval(() => {
+  if (backend === 'android') refreshFromApk();
+  else if (backend === 'preview' && advance(state) && !dialog) render();
+  else if (backend === 'error' && apiKey) boot();
+}, 5_000);
+boot();

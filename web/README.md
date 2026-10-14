@@ -1,6 +1,6 @@
 # Winterhold Web — demonstração
 
-Interface responsiva que acompanha o aplicativo Android Winterhold. O APK será a central de recepção MQTT, processamento, histórico e alertas; a web será uma forma de consultar essa central. Nesta fase, as duas interfaces são demos independentes e seus dados são fictícios. A web não tem conexão MQTT, banco, API operacional ou envio de mensagens.
+Interface responsiva que acompanha o aplicativo Android Winterhold. Ao abrir o APK, ele inicia um servidor demo na porta `8790`, serve esta página e compartilha o mesmo estado fictício com ela. A web consulta o APK e envia a ele as ações de demonstração. MQTT, SQLite, regras reais e envio de mensagens ainda não estão implementados.
 
 ## Executar
 
@@ -17,7 +17,7 @@ Acesse `http://127.0.0.1:8787`. Para mudar endereço e porta:
 HOST=0.0.0.0 PORT=8787 npm start
 ```
 
-`GET /healthz` responde com `{"status":"ok","mode":"demo","service":"winterhold-web"}`. Execute `npm test` para verificar o modelo da demo e o servidor.
+Este servidor Node é somente uma prévia independente para desenvolvimento. `GET /healthz` responde com `{"status":"ok","mode":"demo","service":"winterhold-web"}`. Execute `npm test` para verificar o modelo da prévia e o servidor. Abrir essa prévia não conecta ao APK.
 
 ## Telas
 
@@ -27,11 +27,19 @@ HOST=0.0.0.0 PORT=8787 npm start
 - Equipe: perfis por variável e canal, como no APK.
 - Ajustes: simulação, limiares e canais SMS, e-mail e WhatsApp na prévia.
 
-As amostras surgem a cada cinco segundos enquanto a demo estiver ativa. Nada é persistido após recarregar a página. A saúde do celular exibida na web também é fictícia; ainda não existe coleta do Android. Ajustar limiares não dispara regras reais.
+As amostras surgem a cada cinco segundos enquanto a demo estiver ativa. Ao acessar pelo APK, as alterações feitas na web aparecem no aplicativo e vice-versa; ao reiniciar o processo do APK, o estado volta ao inicial. Bateria, memória, armazenamento e tempo ligado vêm do Android. Na prévia Node, esses valores são fictícios. Ajustar limiares não dispara regras reais.
 
-## Homelab Android/Termux
+## Acesso remoto servido pelo APK
 
-No celular que hospeda o repositório, com Node.js 20+:
+1. Instale e abra o APK de debug atualizado.
+2. Em **Ajustes → Acesso web pelo aplicativo**, copie o endereço completo mostrado pelo celular.
+3. Abra esse endereço em outro dispositivo que alcance o IP do celular pela mesma rede ou pelo Tailscale. O endereço inclui uma chave temporária necessária para acessar o estado e enviar ações demo.
+
+O APK usa a porta `8790`, distinta da porta `8787` usada pela prévia Node. Termux e PM2 não são necessários para o acesso servido pelo APK. A chave muda ao reiniciar o processo. O servidor é HTTP para esta demonstração: use somente uma rede privada de confiança; não publique a porta na internet. O Android pode encerrar o processo em segundo plano, interrompendo a web. Persistência em segundo plano e acesso externo com HTTPS ficam para outra etapa.
+
+## Prévia opcional no Termux/Node
+
+Para executar apenas a prévia independente:
 
 ```bash
 git fetch origin APK
@@ -46,10 +54,10 @@ Em outra sessão, confira:
 curl http://127.0.0.1:8787/healthz
 ```
 
-Pela rede Tailscale, abra `http://IP_TAILSCALE_DO_CELULAR:8787` no navegador de outro dispositivo autorizado. O PM2 é opcional para manter o processo em execução após fechar o terminal: `HOST=0.0.0.0 PORT=8787 pm2 start server.mjs --name winterhold-web --update-env`. Se a porta já estiver em uso, escolha outra em `PORT`. A demo web não exige Android Studio.
+Pela rede Tailscale, abra `http://IP_TAILSCALE_DO_CELULAR:8787` no navegador de outro dispositivo autorizado. O PM2 é opcional para manter a prévia Node em execução após fechar o terminal. Essa prévia gera seus próprios dados fictícios e não recebe alterações do APK.
 
-O homelab hospeda apenas esta interface. A aplicação não coleta estado de Minecraft, Tailscale, Cloudflare ou outros serviços. Este servidor demo não tem autenticação; uma publicação externa futura requer autenticação e HTTPS.
+O homelab não fornece dados de outros serviços ao Winterhold. O servidor Node de prévia não tem autenticação.
 
 ## Contrato da próxima etapa
 
-O celular Android será a central: recebe ESP32 por MQTT, processa regras, registra eventos e histórico local e expõe uma API autenticada para a web. O navegador consulta somente o celular. Uma versão inicial da API poderá oferecer `GET /api/v1/status`, `GET /api/v1/leituras`, `GET /api/v1/eventos`, `GET /api/v1/contatos` e um estado de saúde do próprio celular, com atualização por SSE ou WebSocket; **essas rotas ainda não existem**. A demo web e o APK não compartilham estado nesta fase.
+O APK já oferece uma API **demo** local: `GET /api/v1/state` e `POST /api/v1/action`, protegidas pela chave exibida em Ajustes. O navegador usa essas rotas e atualiza os dados a cada cinco segundos. A API só manipula estado fictício em memória; não recebe dados MQTT nem envia mensagens. O contrato de produção, a persistência, autenticação durável, HTTPS e operação contínua em segundo plano serão desenvolvidos depois.

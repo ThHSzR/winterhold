@@ -8,7 +8,7 @@ import {
 test('escopo visual acompanha o APK e mantém apenas saúde do celular', () => {
   const state = createDemoState();
   assert.deepEqual(Object.keys(CHANNELS), ['sms', 'email', 'whatsapp']);
-  assert.deepEqual(Object.keys(state.deviceHealth), ['battery', 'cpu', 'memory', 'storage']);
+  assert.deepEqual(Object.keys(state.deviceHealth), ['battery', 'memory', 'storage', 'uptime']);
   assert.equal(Object.hasOwn(state, 'infrastructure'), false);
   assert.equal(Object.hasOwn(state, 'automations'), false);
 });

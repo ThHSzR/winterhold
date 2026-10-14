@@ -32,6 +32,7 @@ android {
     buildFeatures {
         compose = true
     }
+    sourceSets.getByName("main").assets.srcDir("../../web")
 }
 
 dependencies {

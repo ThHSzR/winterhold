@@ -9,6 +9,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { WinterholdApp() }
+        DemoCentral.ensureStarted(applicationContext)
+        setContent { WinterholdApp(DemoCentral.store) }
     }
 }

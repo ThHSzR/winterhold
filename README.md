@@ -2,11 +2,11 @@
 
 > **Protótipo Android:** a branch [`APK`](https://github.com/ThHSzR/winterhold/tree/APK/android) contém o aplicativo Kotlin/Jetpack Compose em modo demo. Veja o [plano visual](docs/PLANO_VISUAL_APK.md) e as [instruções de execução](android/README.md). Nenhuma integração real está ativa nesta etapa.
 
-> **Interface web:** a branch [`APK`](https://github.com/ThHSzR/winterhold/tree/APK/web) também contém uma demo responsiva para navegador. Veja o [guia web](web/README.md) e o [plano de integração](docs/PLANO_WEB.md). A web acompanha as cinco telas do APK e mostra leituras, eventos, rotas de aviso e saúde do celular com dados fictícios. O homelab apenas hospeda a interface.
+> **Interface web:** a branch [`APK`](https://github.com/ThHSzR/winterhold/tree/APK/web) também contém uma demo responsiva para navegador. Veja o [guia web](web/README.md) e o [plano de integração](docs/PLANO_WEB.md). A web acompanha as cinco telas do APK. Ao abrir o aplicativo atualizado, ele serve a interface e compartilha com ela as leituras e ações fictícias; a saúde do celular vem do Android. A prévia Node/Termux permanece independente e opcional.
 
 Sistema embarcado para **monitoramento de ambientes climatizados**. Um ESP32 coleta temperatura, umidade relativa e tensão elétrica; um aplicativo Android recebe as medições, mantém um histórico local, mostra o estado do ambiente e gera alertas conforme regras configuradas.
 
-> **Estado do projeto:** especificação e demos de interface Android/web. Firmware, MQTT, persistência, notificações reais e montagem ainda não foram validados. Os exemplos abaixo orientam a implementação.
+> **Estado do projeto:** especificação e demos de interface Android/web. O APK já serve a web demo; firmware, MQTT, persistência, notificações reais e montagem ainda não foram validados. Os exemplos abaixo orientam a implementação.
 
 ## Objetivo
 

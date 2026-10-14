@@ -44,7 +44,7 @@ export function createDemoState(now = Date.now()) {
     enabledChannels: ['sms', 'email', 'whatsapp'],
     running: true,
     offline: false,
-    deviceHealth: { battery: 83, cpu: 18, memory: 46, storage: 62 }
+    deviceHealth: { battery: 83, memory: 46, storage: 62, uptime: '12h 08min' }
   };
 }
 

@@ -75,7 +75,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.tooling.preview.Preview
-import kotlinx.coroutines.delay
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.text.selection.SelectionContainer
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -114,12 +118,6 @@ private enum class Screen(val label: String, val icon: ImageVector) {
 @Composable
 fun WinterholdApp(store: DemoStore = remember { DemoStore() }) {
     var screen by remember { mutableStateOf(Screen.HOME) }
-    LaunchedEffect(store, store.simulationRunning, store.offlineDemo) {
-        while (store.simulationRunning && !store.offlineDemo) {
-            delay(5_000)
-            store.advance()
-        }
-    }
 
     MaterialTheme(colorScheme = WinterholdColors) {
         Scaffold(
@@ -602,10 +600,31 @@ private fun ToggleRow(label: String, checked: Boolean, onChanged: (Boolean) -> U
 
 @Composable
 private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { DemoCentral.refreshUrls() }
     LazyColumn(modifier, contentPadding = PaddingValues(18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { DemoBanner() }
         item { PageTitle("Ajustes", "Parâmetros ilustrativos para explorar o visual") }
+        item {
+            PanelCard {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SectionTitle("Acesso web pelo aplicativo")
+                    Text(DemoCentral.status, color = Ice, fontSize = 13.sp)
+                    Text("Abra um destes endereços em outro dispositivo da mesma rede ou Tailscale. A chave é temporária e protege apenas esta demo HTTP.",
+                        color = Muted, fontSize = 12.sp)
+                    DemoCentral.urls.forEach { url ->
+                        SelectionContainer { Text(url, color = Ice, fontSize = 12.sp) }
+                        TextButton(onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Winterhold web", url))
+                        }) { Text("Copiar endereço") }
+                    }
+                    Text("O servidor funciona enquanto o processo do APK permanecer ativo. O Android pode encerrá-lo em segundo plano; operação contínua será tratada na etapa de serviço persistente.",
+                        color = Muted, fontSize = 11.sp)
+                }
+            }
+        }
         item {
             PanelCard {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
