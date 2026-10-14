@@ -9,7 +9,7 @@ Aplicativo para **celular Android**, escrito em Kotlin com Jetpack Compose. Esta
 3. Aguarde a sincronização e execute a configuração `app` em um emulador ou celular Android 8.0 (API 26) ou superior.
 4. Pela linha de comando, a partir de `android/`: `./gradlew assembleDebug` (macOS/Linux) ou `gradlew.bat assembleDebug` (Windows). O APK de debug é criado em `app/build/outputs/apk/debug/app-debug.apk`.
 
-O Gradle Wrapper está fixado em 8.13. O projeto usa Android Gradle Plugin 8.13.2, Kotlin 2.2.21 e Compose BOM 2026.09.00. A primeira sincronização exige internet para obter o Gradle e as dependências. **Nenhum APK pré-compilado foi publicado nesta branch.**
+O Gradle Wrapper está fixado em 8.13. O projeto usa Android Gradle Plugin 8.13.2, Kotlin 2.2.21 e Compose BOM 2026.02.01, compatível com o SDK 36 deste projeto. A primeira sincronização exige internet para obter o Gradle e as dependências. O build de debug da branch publica o APK como artefato do GitHub Actions quando passa.
 
 ## Telas e interações
 
