@@ -27,15 +27,15 @@ Este servidor Node é somente uma prévia independente para desenvolvimento. `GE
 - Equipe: perfis por variável e canal, como no APK.
 - Ajustes: simulação, limiares e canais SMS, e-mail e WhatsApp na prévia.
 
-As amostras surgem a cada cinco segundos enquanto a demo estiver ativa. Ao acessar pelo APK, as alterações feitas na web aparecem no aplicativo e vice-versa; ao reiniciar o processo do APK, o estado volta ao inicial. Bateria, memória, armazenamento e tempo ligado vêm do Android. Na prévia Node, esses valores são fictícios. Ajustar limiares não dispara regras reais.
+As amostras surgem a cada cinco segundos enquanto a demo estiver ativa. Ao acessar pelo APK, as alterações feitas na web aparecem no aplicativo e vice-versa; o estado demo é salvo no celular e restaurado após reiniciar o processo. Bateria, memória, armazenamento e tempo ligado vêm do Android. Na prévia Node, esses valores são fictícios e o estado continua independente. Ajustar limiares não dispara regras reais.
 
 ## Acesso remoto servido pelo APK
 
 1. Instale e abra o APK de debug atualizado.
 2. Em **Ajustes → Acesso web pelo aplicativo**, copie o endereço completo mostrado pelo celular.
-3. Abra esse endereço em outro dispositivo que alcance o IP do celular pela mesma rede ou pelo Tailscale. O endereço inclui uma chave temporária necessária para acessar o estado e enviar ações demo.
+3. Abra `http://IP_DO_CELULAR:8790/` em outro dispositivo da mesma rede local. Não é necessário informar chave ou login.
 
-O APK usa a porta `8790`, distinta da porta `8787` usada pela prévia Node. Termux e PM2 não são necessários para o acesso servido pelo APK. A chave muda ao reiniciar o processo. O servidor é HTTP para esta demonstração: use somente uma rede privada de confiança; não publique a porta na internet. O Android pode encerrar o processo em segundo plano, interrompendo a web. Persistência em segundo plano e acesso externo com HTTPS ficam para outra etapa.
+O APK usa a porta `8790`, distinta da porta `8787` usada pela prévia Node. Termux e PM2 não são necessários. O serviço Android mantém a central com a tela do aplicativo fechada, retoma após reboot/desbloqueio e preserva dados demo em um arquivo local. A página tenta reconectar automaticamente após interrupção. Esta fase acadêmica usa HTTP direto na rede local, sem túnel, HTTPS ou autenticação. Se o IP mudar, abra o novo endereço. Limites de bateria, parada explícita e preparação inicial estão detalhados no [guia Android](../android/README.md#execução-contínua-e-recuperação).
 
 ## Prévia opcional no Termux/Node
 
@@ -60,4 +60,4 @@ O homelab não fornece dados de outros serviços ao Winterhold. O servidor Node 
 
 ## Contrato da próxima etapa
 
-O APK já oferece uma API **demo** local: `GET /api/v1/state` e `POST /api/v1/action`, protegidas pela chave exibida em Ajustes. O navegador usa essas rotas e atualiza os dados a cada cinco segundos. A API só manipula estado fictício em memória; não recebe dados MQTT nem envia mensagens. O contrato de produção, a persistência, autenticação durável, HTTPS e operação contínua em segundo plano serão desenvolvidos depois.
+O APK oferece uma API **demo** local: `GET /api/v1/state` e `POST /api/v1/action`, sem autenticação nesta fase acadêmica. O navegador usa essas rotas e atualiza os dados a cada cinco segundos. A API manipula somente estado fictício compartilhado e salvo no celular; não recebe MQTT nem envia mensagens. Contrato de produção, SQLite, autenticação e HTTPS continuam fora desta entrega.

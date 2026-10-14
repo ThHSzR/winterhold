@@ -6,6 +6,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.util.UUID
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.math.sin
 
 enum class Metric(val label: String, val unit: String) {
@@ -53,7 +55,7 @@ data class DemoContact(
     val active: Boolean = true
 )
 
-/** Estado efêmero para testar as telas. Sem rede, permissões, SMS ou banco de dados. */
+/** Estado demo compartilhado. A central persiste uma cópia local; sem sensores ou mensagens reais. */
 class DemoStore {
     private var tick = 0
     val readings = mutableStateListOf<Reading>()
@@ -178,4 +180,65 @@ class DemoStore {
             val channels = contact.channels.intersect(enabledChannels.toSet())
             if (channels.isEmpty()) null else contact to channels
         }
+
+    internal fun savedJson(): String = JSONObject()
+        .put("version", 1).put("tick", tick)
+        .put("readings", JSONArray(readings.map { JSONObject()
+            .put("time", it.time).put("temperature", it.temperature.toDouble())
+            .put("humidity", it.humidity.toDouble()).put("voltage", it.voltage.toDouble()) }))
+        .put("events", JSONArray(events.take(500).map { JSONObject()
+            .put("id", it.id).put("time", it.time).put("metric", it.metric?.name ?: JSONObject.NULL)
+            .put("title", it.title).put("detail", it.detail).put("severity", it.severity.name)
+            .put("resolved", it.resolved) }))
+        .put("contacts", JSONArray(contacts.map { JSONObject()
+            .put("id", it.id).put("name", it.name).put("role", it.role)
+            .put("metrics", JSONArray(it.metrics.map { metric -> metric.name }))
+            .put("channels", JSONArray(it.channels.map { channel -> channel.name }))
+            .put("active", it.active) }))
+        .put("temperatureLimit", temperatureLimit.toDouble()).put("humidityLimit", humidityLimit.toDouble())
+        .put("nominalVoltage", nominalVoltage.toDouble()).put("voltageTolerance", voltageTolerance.toDouble())
+        .put("simulationRunning", simulationRunning).put("offlineDemo", offlineDemo)
+        .put("enabledChannels", JSONArray(enabledChannels.map { it.name }))
+        .toString()
+
+    /** Decode and validate everything before replacing the live state. */
+    internal fun restoreJson(json: String) {
+        val root = JSONObject(json)
+        require(root.getInt("version") == 1) { "Versão de estado desconhecida" }
+        val savedTick = root.getInt("tick").also { require(it >= 0) }
+        val savedReadings = root.getJSONArray("readings").objects().map {
+            Reading(it.getLong("time"), it.getDouble("temperature").toFloat(),
+                it.getDouble("humidity").toFloat(), it.getDouble("voltage").toFloat())
+        }.also { require(it.isNotEmpty() && it.size <= 60) }
+        val savedEvents = root.getJSONArray("events").objects().map {
+            AlertEvent(id = it.getString("id"), time = it.getLong("time"),
+                metric = if (it.isNull("metric")) null else Metric.valueOf(it.getString("metric")),
+                title = it.getString("title"), detail = it.getString("detail"),
+                severity = Severity.valueOf(it.getString("severity")), resolved = it.getBoolean("resolved"))
+        }.also { require(it.size <= 500) }
+        val savedContacts = root.getJSONArray("contacts").objects().map {
+            DemoContact(id = it.getString("id"), name = it.getString("name"), role = it.getString("role"),
+                metrics = it.getJSONArray("metrics").strings().map(Metric::valueOf).toSet(),
+                channels = it.getJSONArray("channels").strings().map(Channel::valueOf).toSet(),
+                active = it.getBoolean("active"))
+        }
+        val temperature = root.getDouble("temperatureLimit").toFloat().also { require(it in 20f..35f) }
+        val humidity = root.getDouble("humidityLimit").toFloat().also { require(it in 40f..90f) }
+        val nominal = root.getDouble("nominalVoltage").toFloat().also { require(it in 100f..250f) }
+        val tolerance = root.getDouble("voltageTolerance").toFloat().also { require(it in 2f..20f) }
+        val running = root.getBoolean("simulationRunning")
+        val offline = root.getBoolean("offlineDemo")
+        val channels = root.getJSONArray("enabledChannels").strings().map(Channel::valueOf)
+        readings.clear(); readings.addAll(savedReadings)
+        events.clear(); events.addAll(savedEvents)
+        contacts.clear(); contacts.addAll(savedContacts)
+        enabledChannels.clear(); enabledChannels.addAll(channels.distinct())
+        tick = savedTick
+        temperatureLimit = temperature; humidityLimit = humidity
+        nominalVoltage = nominal; voltageTolerance = tolerance
+        simulationRunning = running; offlineDemo = offline
+    }
+
+    private fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
+    private fun JSONArray.strings() = (0 until length()).map { getString(it) }
 }

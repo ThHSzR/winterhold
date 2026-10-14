@@ -611,7 +611,7 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     SectionTitle("Acesso web pelo aplicativo")
                     Text(DemoCentral.status, color = Ice, fontSize = 13.sp)
-                    Text("Abra um destes endereços em outro dispositivo da mesma rede ou Tailscale. A chave é temporária e protege apenas esta demo HTTP.",
+                    Text("Abra o endereço diretamente pelo IP do celular em outro dispositivo da mesma rede local. Esta demo acadêmica usa HTTP sem login.",
                         color = Muted, fontSize = 12.sp)
                     DemoCentral.urls.forEach { url ->
                         SelectionContainer { Text(url, color = Ice, fontSize = 12.sp) }
@@ -620,7 +620,14 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
                             clipboard.setPrimaryClip(ClipData.newPlainText("Winterhold web", url))
                         }) { Text("Copiar endereço") }
                     }
-                    Text("O servidor funciona enquanto o processo do APK permanecer ativo. O Android pode encerrá-lo em segundo plano; operação contínua será tratada na etapa de serviço persistente.",
+                    Text(DemoCentral.persistenceStatus, color = Muted, fontSize = 12.sp)
+                    TextButton(onClick = {
+                        if (DemoCentral.active) CentralService.stop(context) else CentralService.start(context)
+                    }) { Text(if (DemoCentral.active) "Parar central" else "Retomar central") }
+                    TextButton(onClick = {
+                        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    }) { Text("Configurações de bateria") }
+                    Text("A central continua com a tela fechada e retoma após reiniciar e desbloquear o celular. Parar a central desativa essa retomada até abri-la novamente. Restrições de bateria do Android podem interromper o acesso.",
                         color = Muted, fontSize = 11.sp)
                 }
             }

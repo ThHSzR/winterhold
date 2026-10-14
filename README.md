@@ -6,7 +6,7 @@
 
 Sistema embarcado para **monitoramento de ambientes climatizados**. Um ESP32 coleta temperatura, umidade relativa e tensão elétrica; um aplicativo Android recebe as medições, mantém um histórico local, mostra o estado do ambiente e gera alertas conforme regras configuradas.
 
-> **Estado do projeto:** especificação e demos de interface Android/web. O APK já serve a web demo; firmware, MQTT, persistência, notificações reais e montagem ainda não foram validados. Os exemplos abaixo orientam a implementação.
+> **Estado do projeto:** especificação e demos de interface Android/web. O APK serve a web demo diretamente pelo IP local, com serviço Android, recuperação após boot e persistência dos dados fictícios. Firmware, MQTT, alertas reais e montagem ainda não foram validados. A arquitetura de produção abaixo continua uma proposta; esta fase acadêmica não exige HTTPS ou login.
 
 ## Objetivo
 

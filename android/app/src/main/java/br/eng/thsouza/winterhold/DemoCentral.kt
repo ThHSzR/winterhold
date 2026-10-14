@@ -11,6 +11,8 @@ import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.runtime.snapshots.ObserverHandle
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedInputStream
@@ -20,8 +22,6 @@ import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
 import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
-import java.security.SecureRandom
 import java.util.Collections
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
@@ -34,48 +34,104 @@ object DemoCentral {
     const val PORT = 8790
     val store = DemoStore()
     private val main = Handler(Looper.getMainLooper())
-    private val token = ByteArray(16).also { SecureRandom().nextBytes(it) }
-        .joinToString("") { "%02x".format(it) }
     private var server: DemoHttpServer? = null
+    private var persistence: DemoPersistence? = null
+    private var observer: ObserverHandle? = null
+    private var lastSaved: String? = null
+    var persistenceStatus by mutableStateOf("Carregando dados demo")
+        private set
+    var active by mutableStateOf(false)
+        private set
     var status by mutableStateOf("Aguardando inicialização")
         private set
     var urls by mutableStateOf(emptyList<String>())
         private set
 
+    private val saveChanges = Runnable {
+        Snapshot.sendApplyNotifications()
+        save()
+    }
+    private val advance = object : Runnable {
+        override fun run() {
+            store.advance()
+            refreshUrls()
+            save()
+            main.postDelayed(this, 5_000)
+        }
+    }
+
+    fun prepare(context: Context) {
+        if (persistence != null) return
+        persistence = DemoPersistence(context.applicationContext).also {
+            persistenceStatus = it.restore(store)
+        }
+    }
+
+    fun save() {
+        val json = store.savedJson()
+        if (json == lastSaved) return
+        lastSaved = json
+        persistence?.save(json) {
+            main.post {
+                lastSaved = null
+                persistenceStatus = "Não foi possível salvar dados demo"
+            }
+        }
+    }
+
     fun ensureStarted(context: Context) {
+        prepare(context)
         if (server != null) return
         try {
-            server = DemoHttpServer(context.applicationContext, store, token).also { it.start() }
+            server = DemoHttpServer(context.applicationContext, store).also { it.start() }
+            active = true
             status = "Servidor demo ativo na porta $PORT"
             refreshUrls()
-            main.postDelayed(object : Runnable {
-                override fun run() {
-                    store.advance()
-                    main.postDelayed(this, 5_000)
-                }
-            }, 5_000)
+            observer = Snapshot.registerGlobalWriteObserver {
+                main.removeCallbacks(saveChanges)
+                main.post(saveChanges)
+            }
+            save()
+            main.postDelayed(advance, 5_000)
         } catch (error: Exception) {
             status = "Não foi possível iniciar a web: ${error.message}"
         }
     }
 
+    fun stop() {
+        observer?.dispose()
+        observer = null
+        main.removeCallbacks(saveChanges)
+        main.removeCallbacks(advance)
+        save()
+        server?.stop()
+        server = null
+        active = false
+        urls = emptyList()
+        status = "Central parada; retome para acessar pela web"
+    }
+
+    fun reportStartFailure(error: Exception) {
+        status = "Não foi possível iniciar a central: ${error.message}"
+    }
+
     fun refreshUrls() {
+        if (server == null) { urls = emptyList(); return }
         val addresses = try {
             Collections.list(NetworkInterface.getNetworkInterfaces()).flatMap { network ->
                 Collections.list(network.inetAddresses).filterIsInstance<Inet4Address>()
                     .filter { !it.isLoopbackAddress && !it.isLinkLocalAddress }
                     .map { it.hostAddress.orEmpty() }
-            }.distinct()
+            }.distinct().sortedBy { !InetAddress.getByName(it).isSiteLocalAddress }
         } catch (_: Exception) { emptyList() }
-        urls = addresses.map { "http://$it:$PORT/?key=$token" }
-        if (urls.isEmpty() && server != null) urls = listOf("http://127.0.0.1:$PORT/?key=$token")
+        urls = addresses.map { "http://$it:$PORT/" }
+        if (urls.isEmpty()) urls = listOf("http://127.0.0.1:$PORT/")
     }
 }
 
 internal class DemoHttpServer(
     private val context: Context,
-    private val store: DemoStore,
-    private val token: String
+    private val store: DemoStore
 ) {
     private val main = Handler(Looper.getMainLooper())
     private val workers = Executors.newCachedThreadPool()
@@ -90,7 +146,10 @@ internal class DemoHttpServer(
     )
 
     fun start() {
-        listener = ServerSocket(DemoCentral.PORT, 50, InetAddress.getByName("0.0.0.0"))
+        listener = ServerSocket().apply {
+            reuseAddress = true
+            bind(java.net.InetSocketAddress(InetAddress.getByName("0.0.0.0"), DemoCentral.PORT), 50)
+        }
         Thread({
             while (!listener.isClosed) {
                 try {
@@ -101,6 +160,11 @@ internal class DemoHttpServer(
                 }
             }
         }, "winterhold-web").apply { isDaemon = true; start() }
+    }
+
+    fun stop() {
+        listener.close()
+        workers.shutdownNow()
     }
 
     private fun serve(socket: Socket) {
@@ -124,11 +188,6 @@ internal class DemoHttpServer(
                 return respond(socket, 200, "application/json", """{"status":"ok","mode":"android-demo","service":"winterhold-apk"}""".toByteArray())
             }
             if (route == "/api/v1/state" || route == "/api/v1/action") {
-                val supplied = headers["x-winterhold-key"].orEmpty().toByteArray(StandardCharsets.UTF_8)
-                val expected = token.toByteArray(StandardCharsets.UTF_8)
-                if (!MessageDigest.isEqual(supplied, expected)) {
-                    return respond(socket, 401, "application/json", """{"error":"Chave inválida"}""".toByteArray())
-                }
                 try {
                     val json = when {
                         route == "/api/v1/state" && method == "GET" -> onMain { snapshot() }
@@ -143,7 +202,7 @@ internal class DemoHttpServer(
                                 total += n
                             }
                             val action = JSONObject(String(bytes, StandardCharsets.UTF_8))
-                            onMain { applyAction(action); snapshot() }
+                            onMain { applyAction(action); DemoCentral.save(); snapshot() }
                         }
                         else -> return respond(socket, 405, "application/json", ByteArray(0))
                     }

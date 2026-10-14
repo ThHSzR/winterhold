@@ -4,7 +4,6 @@ import {
 } from './demo.js';
 
 const state = createDemoState();
-const apiKey = new URLSearchParams(location.search).get('key');
 let backend = 'loading';
 const pages = {
   inicio: ['Visão geral', 'home'],
@@ -31,7 +30,7 @@ function connectionError(message) {
 async function refreshFromApk() {
   try {
     const response = await fetch('/api/v1/state', {
-      headers: { 'X-Winterhold-Key': apiKey }, cache: 'no-store'
+      cache: 'no-store', signal: AbortSignal.timeout(8_000)
     });
     if (!response.ok) throw new Error(`Central indisponível (${response.status})`);
     Object.assign(state, await response.json());
@@ -47,7 +46,8 @@ async function sendAction(payload, previewAction) {
     try {
       const response = await fetch('/api/v1/action', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Winterhold-Key': apiKey },
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(8_000),
         body: JSON.stringify(payload)
       });
       if (!response.ok) throw new Error((await response.json()).error || `Erro ${response.status}`);
@@ -66,11 +66,10 @@ async function sendAction(payload, previewAction) {
 async function boot() {
   content.innerHTML = '<div class="card empty">Conectando à central…</div>';
   try {
-    const response = await fetch('/healthz', { cache: 'no-store' });
+    const response = await fetch('/healthz', { cache: 'no-store', signal: AbortSignal.timeout(8_000) });
     if (!response.ok) throw new Error('Servidor indisponível');
     const health = await response.json();
     if (health.mode === 'android-demo') {
-      if (!apiKey) return connectionError('Abra o endereço completo mostrado em Ajustes no APK, incluindo a chave de acesso.');
       document.querySelector('.page-footer').textContent = 'Winterhold · Dados demo compartilhados com o APK. Saúde do celular medida no Android.';
       await refreshFromApk();
     } else if (health.mode === 'demo') {
@@ -422,6 +421,6 @@ window.addEventListener('hashchange', () => {
 setInterval(() => {
   if (backend === 'android') refreshFromApk();
   else if (backend === 'preview' && advance(state) && !dialog) render();
-  else if (backend === 'error' && apiKey) boot();
+  else if (backend === 'error') boot();
 }, 5_000);
 boot();
