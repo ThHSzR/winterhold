@@ -1,6 +1,6 @@
 # Winterhold Web — demonstração
 
-Interface responsiva para explorar o painel Winterhold no navegador. Os dados são fictícios, gerados em memória pelo próprio navegador. Não há conexão MQTT, banco, API operacional ou envio de mensagens.
+Interface responsiva que acompanha o aplicativo Android Winterhold. O APK será a central de recepção MQTT, processamento, histórico e alertas; a web será uma forma de consultar essa central. Nesta fase, as duas interfaces são demos independentes e seus dados são fictícios. A web não tem conexão MQTT, banco, API operacional ou envio de mensagens.
 
 ## Executar
 
@@ -21,31 +21,35 @@ HOST=0.0.0.0 PORT=8787 npm start
 
 ## Telas
 
-- Visão geral, leituras e histórico fictício de temperatura, umidade e tensão.
-- Ambiente com presença, porta, luminosidade, ar-condicionado, relé, agenda e dispositivos ilustrativos.
-- Infraestrutura com energia, bateria, CPU, RAM, armazenamento, rede, MQTT, Cloudflare Tunnel, Tailscale/SSH, Playit e Minecraft em estados de exemplo.
-- Automações planejadas: climatização por agenda/presença, economia de energia, watchdog, queda/restauração e Wake-on-LAN.
-- Alertas demo, filtro, resolução e prévia de roteamento por perfil e canal; equipe e ajustes locais.
+- Início: temperatura em destaque, umidade, tensão, estado do ESP32, eventos recentes e saúde ilustrativa do celular central.
+- Histórico: filtros por variável, gráfico e amostras fictícias.
+- Alertas: eventos, filtros, resolução e prévia de roteamento.
+- Equipe: perfis por variável e canal, como no APK.
+- Ajustes: simulação, limiares e canais SMS, e-mail e WhatsApp na prévia.
 
-As amostras surgem a cada cinco segundos enquanto a demo estiver ativa. Nada é persistido após recarregar a página. Ajustar limiares não dispara regras reais. A interface nunca envia comando ao ar-condicionado ou a outro dispositivo.
+As amostras surgem a cada cinco segundos enquanto a demo estiver ativa. Nada é persistido após recarregar a página. A saúde do celular exibida na web também é fictícia; ainda não existe coleta do Android. Ajustar limiares não dispara regras reais.
 
 ## Homelab Android/Termux
 
-No celular que hospeda o repositório, com Node.js 20+ e PM2 disponíveis:
+No celular que hospeda o repositório, com Node.js 20+:
 
 ```bash
 git fetch origin APK
 git checkout APK
 cd web
-HOST=0.0.0.0 PORT=8787 pm2 start server.mjs --name winterhold-web --update-env
-pm2 save
+HOST=0.0.0.0 PORT=8787 npm start
+```
+
+Em outra sessão, confira:
+
+```bash
 curl http://127.0.0.1:8787/healthz
 ```
 
-Pela rede Tailscale, abra `http://IP_TAILSCALE_DO_CELULAR:8787` no navegador de outro dispositivo autorizado. Se a porta já estiver em uso, escolha outra em `PORT`. Para atualização: `git pull --ff-only origin APK` e `pm2 restart winterhold-web --update-env`. A demo não exige Android Studio.
+Pela rede Tailscale, abra `http://IP_TAILSCALE_DO_CELULAR:8787` no navegador de outro dispositivo autorizado. O PM2 é opcional para manter o processo em execução após fechar o terminal: `HOST=0.0.0.0 PORT=8787 pm2 start server.mjs --name winterhold-web --update-env`. Se a porta já estiver em uso, escolha outra em `PORT`. A demo web não exige Android Studio.
 
-Expor este servidor diretamente à internet não é a etapa prevista: ele não tem autenticação. A publicação futura deve passar por autenticação e HTTPS antes de disponibilizar a API da central.
+O homelab hospeda apenas esta interface. A aplicação não coleta estado de Minecraft, Tailscale, Cloudflare ou outros serviços. Este servidor demo não tem autenticação; uma publicação externa futura requer autenticação e HTTPS.
 
 ## Contrato da próxima etapa
 
-O celular Android será a central: recebe ESP/Pico por MQTT, processa regras, registra eventos e histórico local e expõe uma API autenticada para a web. O navegador consulta somente o celular. Uma versão inicial da API poderá oferecer `GET /api/v1/status`, `GET /api/v1/leituras`, `GET /api/v1/eventos` e `GET /api/v1/contatos`, com atualização por SSE ou WebSocket; **essas rotas ainda não existem**. Permissões, controle de acesso, retomada offline e entrega de alertas precisarão ser definidos antes da ligação a dados reais.
+O celular Android será a central: recebe ESP32 por MQTT, processa regras, registra eventos e histórico local e expõe uma API autenticada para a web. O navegador consulta somente o celular. Uma versão inicial da API poderá oferecer `GET /api/v1/status`, `GET /api/v1/leituras`, `GET /api/v1/eventos`, `GET /api/v1/contatos` e um estado de saúde do próprio celular, com atualização por SSE ou WebSocket; **essas rotas ainda não existem**. A demo web e o APK não compartilham estado nesta fase.

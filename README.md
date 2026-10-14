@@ -2,7 +2,7 @@
 
 > **Protótipo Android:** a branch [`APK`](https://github.com/ThHSzR/winterhold/tree/APK/android) contém o aplicativo Kotlin/Jetpack Compose em modo demo. Veja o [plano visual](docs/PLANO_VISUAL_APK.md) e as [instruções de execução](android/README.md). Nenhuma integração real está ativa nesta etapa.
 
-> **Interface web:** a branch [`APK`](https://github.com/ThHSzR/winterhold/tree/APK/web) também contém uma demo responsiva para navegador. Veja o [guia web](web/README.md) e o [plano de integração](docs/PLANO_WEB.md). As leituras, serviços, eventos e rotas de aviso são fictícios.
+> **Interface web:** a branch [`APK`](https://github.com/ThHSzR/winterhold/tree/APK/web) também contém uma demo responsiva para navegador. Veja o [guia web](web/README.md) e o [plano de integração](docs/PLANO_WEB.md). A web acompanha as cinco telas do APK e mostra leituras, eventos, rotas de aviso e saúde do celular com dados fictícios. O homelab apenas hospeda a interface.
 
 Sistema embarcado para **monitoramento de ambientes climatizados**. Um ESP32 coleta temperatura, umidade relativa e tensão elétrica; um aplicativo Android recebe as medições, mantém um histórico local, mostra o estado do ambiente e gera alertas conforme regras configuradas.
 

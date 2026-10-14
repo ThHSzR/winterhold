@@ -1,27 +1,26 @@
 # Interface web e central Android
 
-A branch `APK` contém demos em `web/` e `android/`. Leituras, eventos, contatos e estados da web são fictícios e vivem somente na memória do navegador. Nenhum ESP, broker, serviço ou atuador está conectado nesta etapa.
+A branch `APK` contém demos em `web/` e `android/`. A interface web segue a navegação do APK: Início, Histórico, Alertas, Equipe e Ajustes. Leituras, eventos, contatos e saúde do celular exibidos na web são fictícios e vivem somente na memória do navegador. As duas demos não compartilham estado nesta etapa.
 
 ## Arquitetura prevista
 
 ```mermaid
 flowchart LR
-  S["ESP32 / Pico"] -->|MQTT| C["Celular Android"]
+  S["ESP32"] -->|MQTT| C["Aplicativo Android"]
   C -->|API autenticada| W["Interface web"]
   C --> H["Histórico e alertas"]
-  C --> A["Comandos autorizados"]
 ```
 
-O celular será responsável por validar leituras, executar regras, persistir histórico, registrar incidentes e entregar avisos. A web consultará a central e indicará falhas de comunicação. O broker MQTT não será acessado pelo navegador.
+O aplicativo no celular será a central: validará leituras, executará regras, persistirá histórico, registrará eventos e entregará avisos. A web consultará a central e indicará falhas de comunicação. O homelab é somente o ambiente de execução da interface web; não é uma fonte de dados sobre outros serviços. O broker MQTT não será acessado pelo navegador.
 
 | Tela | Demonstração | Próxima integração |
 | --- | --- | --- |
-| Visão geral / Histórico | Temperatura, umidade e tensão fictícias. | Dados e histórico no celular. |
-| Ambiente | Presença, porta, luz, agenda, relé e ar-condicionado ilustrativos. | Sensores e controle autorizado após validação do hardware. |
-| Infraestrutura | Bateria, CPU, RAM, armazenamento, internet, energia, MQTT, Cloudflare, Tailscale/SSH, Playit e Minecraft de exemplo. | Coletores e sondagens reais no homelab. |
-| Automações | Presença/agenda, economia, watchdog, energia e Wake-on-LAN apenas descritos. | Regras, histerese, transições e testes de recuperação. |
-| Alertas / Equipe / Ajustes | Eventos e roteamento local para SMS, e-mail, WhatsApp, Telegram e Android. | Contatos, autorização, envio e confirmação de entrega. |
+| Início | Temperatura, umidade, tensão, ESP32 e eventos como no APK; cartão de saúde fictícia do celular. | Leituras e saúde do Android, disponibilizadas pelo aplicativo. |
+| Histórico | Gráfico e amostras geradas no navegador. | Consulta ao histórico persistido pelo celular. |
+| Alertas | Eventos fictícios, filtro, resolução e prévia de rotas. | Eventos e tentativas de entrega da central. |
+| Equipe | Perfis locais de manutenção, elétrica e gestão. | Destinatários e filtros autorizados na central. |
+| Ajustes | Simulação, limiares e canais SMS, e-mail e WhatsApp. | Configurações persistidas no aplicativo. |
 
-As rotas `GET /api/v1/status`, `/api/v1/leituras`, `/api/v1/eventos` e `/api/v1/contatos`, com atualização por SSE ou WebSocket, são propostas para a etapa seguinte. Ainda não existem. A autenticação, HTTPS, retenção, tratamento offline e autorização de comandos serão definidos antes de conectar dados reais.
+As rotas `GET /api/v1/status`, `/api/v1/leituras`, `/api/v1/eventos` e `/api/v1/contatos`, com atualização por SSE ou WebSocket, são propostas para a etapa seguinte. Um estado de saúde do próprio celular também poderá ser exposto. Ainda não existem. A autenticação, HTTPS, retenção e tratamento offline serão definidos antes de conectar dados reais. Serviços do homelab ficam fora do escopo.
 
-Execute `cd web && npm test` e `npm start`. O [guia de execução](../web/README.md) explica o uso do PM2 em Termux. A validação no homelab e no navegador do celular ainda depende de acesso ao dispositivo.
+Execute `cd web && npm test` e `npm start`. O [guia de execução](../web/README.md) explica o uso opcional do PM2 em Termux. Após atualizar a branch no celular, confira a interface revisada no navegador.

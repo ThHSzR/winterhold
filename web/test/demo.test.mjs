@@ -2,8 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createDemoState, advance, simulateAlert, setOffline, resolveAlert,
-  addContact, toggleContactItem, routeAlert, health
+  addContact, toggleContactItem, routeAlert, health, CHANNELS
 } from '../demo.js';
+
+test('escopo visual acompanha o APK e mantém apenas saúde do celular', () => {
+  const state = createDemoState();
+  assert.deepEqual(Object.keys(CHANNELS), ['sms', 'email', 'whatsapp']);
+  assert.deepEqual(Object.keys(state.deviceHealth), ['battery', 'cpu', 'memory', 'storage']);
+  assert.equal(Object.hasOwn(state, 'infrastructure'), false);
+  assert.equal(Object.hasOwn(state, 'automations'), false);
+});
 
 test('amostras demo avançam somente quando a simulação e a conexão estão ativas', () => {
   const state = createDemoState(1_000_000);

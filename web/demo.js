@@ -7,9 +7,7 @@ export const METRICS = {
 export const CHANNELS = {
   sms: 'SMS',
   email: 'E-mail',
-  whatsapp: 'WhatsApp',
-  telegram: 'Telegram',
-  android: 'Android'
+  whatsapp: 'WhatsApp'
 };
 
 let sequence = 0;
@@ -38,7 +36,7 @@ export function createDemoState(now = Date.now()) {
       event(now - 4 * 60 * 60_000, null, 'Monitoramento iniciado', 'Central de demonstração · ESP32 simulado', 'info', true)
     ],
     contacts: [
-      { id: 'maintenance', name: 'Equipe de manutenção', role: 'Manutenção', metrics: ['temperature', 'humidity', 'voltage'], channels: ['sms', 'whatsapp', 'android'], active: true },
+      { id: 'maintenance', name: 'Equipe de manutenção', role: 'Manutenção', metrics: ['temperature', 'humidity', 'voltage'], channels: ['sms', 'whatsapp'], active: true },
       { id: 'electrical', name: 'Técnico elétrico', role: 'Elétrica', metrics: ['voltage'], channels: ['sms'], active: true },
       { id: 'management', name: 'Gestão de instalações', role: 'Gestão', metrics: ['temperature', 'humidity'], channels: ['email', 'whatsapp'], active: true }
     ],
@@ -46,30 +44,7 @@ export function createDemoState(now = Date.now()) {
     enabledChannels: ['sms', 'email', 'whatsapp'],
     running: true,
     offline: false,
-    infrastructure: {
-      uptime: '12d 08h', cpu: 18, ram: 46, battery: 83, storage: 62,
-      latency: 24, power: true, internet: true,
-      services: [
-        { name: 'Broker MQTT', detail: 'ESP / Pico → central', status: 'online' },
-        { name: 'Cloudflare Tunnel', detail: 'Acesso web', status: 'online' },
-        { name: 'Tailscale / SSH', detail: 'Rede privada · porta 8022', status: 'online' },
-        { name: 'Playit', detail: 'Túnel de jogos', status: 'online' },
-        { name: 'Minecraft', detail: 'Servidor · porta 25565', status: 'online' }
-      ],
-      devices: [
-        { name: 'ESP32 · Sala 01', kind: 'Climatização', status: 'online', value: '23,4 °C' },
-        { name: 'ESP32 · Energia', kind: 'Tensão / bateria', status: 'online', value: '220 V' },
-        { name: 'Pico · Entrada', kind: 'Porta / presença', status: 'online', value: 'Presente' }
-      ]
-    },
-    environment: { light: 68, presence: true, doorOpen: false, acOn: true, setpoint: 23, relayOn: true, nextClass: '14:00' },
-    automations: [
-      { name: 'Climatização por presença', detail: 'Agenda + presença + temperatura', enabled: true },
-      { name: 'Economia de energia', detail: 'Sem movimento por 15 min → avaliar desligamento', enabled: true },
-      { name: 'Watchdog de serviços', detail: 'Verificar serviços e registrar incidente', enabled: true },
-      { name: 'Queda e retorno de energia', detail: 'Alertar uma vez por transição de estado', enabled: true },
-      { name: 'Wake-on-LAN', detail: 'Acionamento de rede planejado', enabled: false }
-    ]
+    deviceHealth: { battery: 83, cpu: 18, memory: 46, storage: 62 }
   };
 }
 

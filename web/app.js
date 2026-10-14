@@ -9,12 +9,9 @@ const pages = {
   historico: ['Histórico', 'history'],
   alertas: ['Alertas', 'bell'],
   equipe: ['Equipe', 'users'],
-  ambiente: ['Ambiente', 'thermometer'],
-  infraestrutura: ['Infraestrutura', 'radio'],
-  automacoes: ['Automações', 'bolt'],
   ajustes: ['Ajustes', 'settings']
 };
-const mainPages = ['inicio', 'ambiente', 'infraestrutura', 'alertas'];
+const mainPages = ['inicio', 'historico', 'alertas', 'equipe'];
 let metric = 'temperature';
 let alertFilter = 'all';
 let dialog = null;
@@ -90,6 +87,7 @@ function overview() {
   const rows = state.events.slice(0, 3).map(item => `<div class="event-row">
     ${eventIcon(item)}<div class="event-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></div>
     <span class="event-time">${time(item.time)}</span></div>`).join('');
+  const device = state.deviceHealth;
   return `${pageHead('PAINEL / AMBIENTE', 'Visão geral', 'Sala 01 · Ambiente climatizado · leituras fictícias')}
     <div class="overview-grid">
       <section class="card hero" aria-label="Temperatura atual demonstrativa">
@@ -115,8 +113,14 @@ function overview() {
       <div>${section('Eventos recentes', '<a class="subtle-link" href="#alertas">Ver todos →</a>')}
         <section class="card card-pad events-list">${rows}</section></div>
     </div>
-    <div class="quick-links"><a class="quick-link" href="#ambiente">${icon('thermometer')} Ambiente e sensores →</a><a class="quick-link" href="#infraestrutura">${icon('radio')} Homelab e serviços →</a><a class="quick-link" href="#automacoes">${icon('bolt')} Regras e automações →</a></div>
-    <p class="muted-note">A central MQTT, o envio de mensagens e o comando do ar-condicionado não estão conectados nesta demonstração.</p>`;
+    ${section('Saúde do celular central', '<span class="tag">DADOS FICTÍCIOS</span>')}
+    <section class="card card-pad device-health" aria-label="Saúde demonstrativa do celular central">
+      <div><span>Bateria</span><strong>${device.battery}%</strong></div>
+      <div><span>CPU</span><strong>${device.cpu}%</strong></div>
+      <div><span>Memória</span><strong>${device.memory}%</strong></div>
+      <div><span>Armazenamento</span><strong>${device.storage}%</strong></div>
+    </section>
+    <p class="muted-note">A saúde do celular é ilustrativa nesta versão. O APK será a central MQTT e de operações; a web apresentará seus dados por API autenticada quando essa integração existir.</p>`;
 }
 function metricCard(key, value, hint) {
   const iconName = key === 'humidity' ? 'drop' : 'bolt';
@@ -187,9 +191,7 @@ function settingsPage() {
     ['database', 'Histórico / API', 'SQLite no celular e API local para a interface web.'],
     ['message', 'SMS', 'Envio após validar modem, permissões e entrega.'],
     ['mail', 'E-mail', 'Provedor autenticado, fila e confirmação.'],
-    ['message', 'WhatsApp / Telegram', 'Entrega de alertas após configurar credenciais e políticas de cada canal.'],
-    ['bell', 'Notificação Android', 'Avisos locais gerados pela central no celular.'],
-    ['bolt', 'Ar-condicionado / IR', 'Comandos após validar emissor, receptor e retorno de estado.']
+    ['message', 'WhatsApp', 'Link assistido ou integração oficial após validação.']
   ].map(([symbol, title, detail]) =>
     `<article class="card integration-card"><span class="metric-icon">${icon(symbol)}</span><h3>${title}</h3><p>${detail}</p><span class="tag">PLANEJADO</span></article>`).join('');
   return `${pageHead('CENTRAL / CONFIGURAÇÃO', 'Ajustes', 'Controles locais para explorar o protótipo')}
@@ -212,66 +214,6 @@ function settingsPage() {
     <div class="integration-grid">${integrations}</div>
     <p class="muted-note">O navegador não acessará o broker MQTT diretamente. O celular receberá as mensagens dos ESPs, processará as regras e servirá dados à web por uma API autenticada.</p>`;
 }
-function infoTile(label, value, note) {
-  return `<div class="card info-tile"><span class="kicker">${label}</span><strong>${value}</strong><small>${note}</small></div>`;
-}
-function environmentPage() {
-  const room = state.environment;
-  const devices = state.infrastructure.devices.map(device =>
-    `<div class="device-row"><span class="status-dot ${state.offline && device.name.includes('Sala') ? 'offline' : ''}"></span><div><strong>${escapeHtml(device.name)}</strong><small>${escapeHtml(device.kind)}</small></div><b>${state.offline && device.name.includes('Sala') ? 'Sem sinal' : escapeHtml(device.value)}</b></div>`).join('');
-  return `${pageHead('IOT / SALA 01', 'Ambiente', 'Mapa visual dos sensores e atuadores · valores fictícios')}
-    <div class="info-grid">
-      ${infoTile('TEMPERATURA', `${decimal(state.samples[0].temperature)} °C`, 'DHT22 · amostra demo')}
-      ${infoTile('UMIDADE', `${decimal(state.samples[0].humidity)} %`, 'DHT22 · amostra demo')}
-      ${infoTile('LUMINOSIDADE', `${room.light} %`, 'Sensor planejado')}
-      ${infoTile('PRÓXIMA AULA', room.nextClass, 'Agenda ilustrativa')}
-    </div>
-    ${section('Estado da sala')}
-    <div class="state-grid">
-      <div class="card state-card">${icon('users')}<div><span>Presença / movimento</span><strong>${room.presence ? 'Detectada' : 'Ausente'}</strong><small>PIR / mmWave planejado</small></div></div>
-      <div class="card state-card">${icon('home')}<div><span>Porta</span><strong>${room.doorOpen ? 'Aberta' : 'Fechada'}</strong><small>Contato magnético planejado</small></div></div>
-      <div class="card state-card">${icon('thermometer')}<div><span>Ar-condicionado</span><strong>${room.acOn ? 'Ligado' : 'Desligado'} · ${room.setpoint} °C</strong><small>Estado lógico ilustrativo · IR futuro</small></div></div>
-      <div class="card state-card">${icon('bolt')}<div><span>Relé</span><strong>${room.relayOn ? 'Ativado' : 'Desativado'}</strong><small>Atuador ilustrativo</small></div></div>
-    </div>
-    ${section('Dispositivos')}
-    <section class="card card-pad device-list">${devices}</section>
-    <p class="muted-note">Nenhum botão nesta página envia comando ao ESP ou ao ar-condicionado. Agenda, presença, porta, IR e relé são apenas a representação do planejamento.</p>`;
-}
-function infrastructurePage() {
-  const infra = state.infrastructure;
-  const services = infra.services.map(service =>
-    `<div class="device-row"><span class="status-dot"></span><div><strong>${escapeHtml(service.name)}</strong><small>${escapeHtml(service.detail)}</small></div><b>Simulado</b></div>`).join('');
-  return `${pageHead('HOMELAB / CENTRAL', 'Infraestrutura', 'Saúde do celular e dos serviços · telemetria fictícia')}
-    <div class="info-grid">
-      ${infoTile('UPTIME', infra.uptime, 'Central Android / Termux')}
-      ${infoTile('CPU', `${infra.cpu}%`, 'Uso de exemplo')}
-      ${infoTile('RAM', `${infra.ram}%`, 'Uso de exemplo')}
-      ${infoTile('BATERIA', `${infra.battery}%`, 'Fonte de energia')}
-      ${infoTile('ARMAZENAMENTO', `${infra.storage}%`, 'Uso de exemplo')}
-      ${infoTile('LATÊNCIA', `${infra.latency} ms`, 'Internet · exemplo')}
-    </div>
-    <div class="settings-grid">
-      <section class="card settings-card"><h2>Energia e rede</h2>
-        <div class="settings-line"><span>Energia AC</span>${pill(infra.power ? 'PRESENTE' : 'AUSENTE', infra.power ? 'normal' : 'warning')}</div>
-        <div class="settings-line"><span>Internet</span>${pill(infra.internet ? 'CONECTADA' : 'OFFLINE', infra.internet ? 'normal' : 'warning')}</div>
-        <p>Queda/restauração, bateria baixa e duração da interrupção farão parte do registro de incidentes.</p></section>
-      <section class="card settings-card"><h2>Caminho dos dados</h2>
-        <div class="data-flow"><span>ESP / Pico</span><span>MQTT</span><span>Celular</span><span>API web</span></div>
-        <p>O celular centralizará regras, banco e alertas. Estes indicadores ainda não consultam a central.</p></section>
-    </div>
-    ${section('Serviços monitorados')}
-    <section class="card card-pad device-list">${services}</section>
-    <p class="muted-note">Estados, uptime e latência são valores fixos de demonstração. Nenhuma sondagem de serviço ou comando remoto é executado.</p>`;
-}
-function automationsPage() {
-  const cards = state.automations.map((rule, index) =>
-    `<article class="card rule-card"><span class="circle-icon">${icon('bolt')}</span><div><h3>${escapeHtml(rule.name)}</h3><p>${escapeHtml(rule.detail)}</p></div><span class="tag">${rule.enabled ? 'CENÁRIO DEMO' : 'PLANEJADO'}</span></article>`).join('');
-  return `${pageHead('REGRAS / CENÁRIOS', 'Automações', 'Fluxos previstos para a central Android · nenhuma regra em execução')}
-    <div class="rule-list">${cards}</div>
-    ${section('Eventos previstos')}
-    <section class="card settings-card"><p>Presença, agenda, temperatura, porta, energia e disponibilidade dos serviços serão entradas das regras. O celular registrará transições para evitar alertas repetidos e oferecerá comandos autorizados após a integração.</p></section>
-    <p class="muted-note">Wake-on-LAN, watchdog, reinício de serviços e comandos IR estão apenas no plano visual. A demo não controla equipamentos.</p>`;
-}
 function render() {
   const page = currentPage();
   document.querySelector('#side-nav').innerHTML = Object.keys(pages).map(p => navItem(p)).join('');
@@ -279,7 +221,7 @@ function render() {
   document.querySelector('#page-heading').textContent = pages[page][0];
   document.querySelector('#header-date').textContent = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
   document.title = `${pages[page][0]} · Winterhold demo`;
-  content.innerHTML = ({ inicio: overview, historico: historyPage, alertas: alertsPage, equipe: peoplePage, ambiente: environmentPage, infraestrutura: infrastructurePage, automacoes: automationsPage, ajustes: settingsPage })[page]();
+  content.innerHTML = ({ inicio: overview, historico: historyPage, alertas: alertsPage, equipe: peoplePage, ajustes: settingsPage })[page]();
   if (dialog) renderDialog();
 }
 function openDialog(type, id = null) {
