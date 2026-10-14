@@ -132,7 +132,7 @@ Esta árvore é uma proposta, ainda não criada.
 
 ## Equipe e referência
 
-Projeto de Marini Luzia, Mateus Afonso, Nicole Noleto, Thiago Henrique e Ronaldo. O escopo inicial foi baseado no documento **“Projeto de Sistema Embarcado - Automação e Monitoramento de Ar-Condicionado”**, fornecido pela equipe.
+Projeto de Marini Luzia, Mateus Afonso, Nicole Noleto, Thiago Henrique e Ronaldo. O escopo inicial foi baseado no documento [**“Projeto de Sistema Embarcado - Automação e Monitoramento de Ar-Condicionado”**](docs/Projeto_de_Sistema_Embarcado.pdf), fornecido pela equipe.
 
 Referências técnicas para as decisões de comunicação:
 
