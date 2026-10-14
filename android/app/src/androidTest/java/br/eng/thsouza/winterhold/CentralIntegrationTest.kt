@@ -68,11 +68,16 @@ class CentralIntegrationTest {
         // Stop closes the listening socket and disables automatic startup.
         instrumentation.runOnMainSync { CentralService.stop(context) }
         awaitCondition { !CentralService.isEnabled(context) && runCatching { request("/healthz") }.isFailure }
+        instrumentation.runOnMainSync { DemoCentral.store.nominalVoltage = 230f }
+        awaitCondition {
+            JSONObject(File(context.filesDir, "demo-state.json").readText()).getInt("nominalVoltage") == 230
+        }
         val reopened = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         awaitCondition { request("/healthz").first == 200 }
         val state = JSONObject(request("/api/v1/state").second)
         assertEquals(29, state.getJSONObject("limits").getInt("temperature"))
+        assertEquals(230, state.getJSONObject("limits").getInt("nominalVoltage"))
         assertFalse(state.getBoolean("running"))
         assertEquals(400, request("/api/v1/action", """{"type":"limit","key":"temperature","value":900}""").first)
         instrumentation.runOnMainSync { reopened.finish() }

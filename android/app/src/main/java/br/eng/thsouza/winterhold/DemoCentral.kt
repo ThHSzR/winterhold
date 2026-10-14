@@ -65,6 +65,12 @@ object DemoCentral {
         persistence = DemoPersistence(context.applicationContext).also {
             persistenceStatus = it.restore(store)
         }
+        // Persistence belongs to the app state, even when the user stops the web service.
+        observer = Snapshot.registerGlobalWriteObserver {
+            main.removeCallbacks(saveChanges)
+            main.post(saveChanges)
+        }
+        save()
     }
 
     fun save() {
@@ -87,10 +93,6 @@ object DemoCentral {
             active = true
             status = "Servidor demo ativo na porta $PORT"
             refreshUrls()
-            observer = Snapshot.registerGlobalWriteObserver {
-                main.removeCallbacks(saveChanges)
-                main.post(saveChanges)
-            }
             save()
             main.postDelayed(advance, 5_000)
         } catch (error: Exception) {
@@ -99,9 +101,6 @@ object DemoCentral {
     }
 
     fun stop() {
-        observer?.dispose()
-        observer = null
-        main.removeCallbacks(saveChanges)
         main.removeCallbacks(advance)
         save()
         server?.stop()
