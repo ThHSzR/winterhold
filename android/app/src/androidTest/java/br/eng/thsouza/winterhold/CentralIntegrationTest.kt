@@ -45,6 +45,12 @@ class CentralIntegrationTest {
     }
 
     @Test fun servesDirectIpWithoutKeyPersistsAndSurvivesClosingActivity() {
+        // Match the one-time preparation offered by the app, without changing other apps.
+        instrumentation.uiAutomation.executeShellCommand(
+            "dumpsys deviceidle whitelist +${context.packageName}"
+        ).use { descriptor ->
+            java.io.FileInputStream(descriptor.fileDescriptor).use { it.readBytes() }
+        }
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             instrumentation.uiAutomation.executeShellCommand(
                 "pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS"

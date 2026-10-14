@@ -7,6 +7,8 @@ chmod +x gradlew
 # Gradle's device test runner force-stops and uninstalls the target after instrumentation.
 # Install the same built APK for the standalone lifecycle checks.
 adb install -r app/build/outputs/apk/debug/app-debug.apk
+# Reproduce the app-specific battery permission granted during initial device preparation.
+adb shell dumpsys deviceidle whitelist +br.eng.thsouza.winterhold
 if [ "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" -ge 33 ]; then
   adb shell pm grant br.eng.thsouza.winterhold android.permission.POST_NOTIFICATIONS
 fi
@@ -39,7 +41,7 @@ echo "Checking central with activity closed and screen off"
 check_central
 # The activity is already closed. Kill the process without force-stop so START_STICKY may recover.
 # Use the userdebug emulator's shell to simulate a system process kill. Android 11's
-# run-as domain cannot reliably see/signall the app PID through its restricted /proc.
+# run-as command failed to signal the test PID on Android 11.
 adb root
 adb wait-for-device
 pid=$(adb shell pidof br.eng.thsouza.winterhold | tr -d '\r')

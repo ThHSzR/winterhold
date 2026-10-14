@@ -94,6 +94,19 @@ class CentralService : Service() {
         private fun preferences(context: Context) = context.getSharedPreferences("central", Context.MODE_PRIVATE)
         fun isEnabled(context: Context) = preferences(context).getBoolean("enabled", false)
 
+        fun batteryExempt(context: Context) = context.getSystemService(PowerManager::class.java)
+            .isIgnoringBatteryOptimizations(context.packageName)
+
+        fun requestBatterySetup(context: Context) {
+            val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                .setData(android.net.Uri.parse("package:${context.packageName}"))
+            try {
+                context.startActivity(intent)
+            } catch (_: android.content.ActivityNotFoundException) {
+                context.startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            }
+        }
+
         fun start(context: Context, enable: Boolean = true) {
             DemoCentral.prepare(context)
             if (enable) preferences(context).edit().putBoolean("enabled", true).commit()

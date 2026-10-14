@@ -625,9 +625,9 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
                         if (DemoCentral.active) CentralService.stop(context) else CentralService.start(context)
                     }) { Text(if (DemoCentral.active) "Parar central" else "Retomar central") }
                     TextButton(onClick = {
-                        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                        CentralService.requestBatterySetup(context)
                     }) { Text("Configurações de bateria") }
-                    Text("A central continua com a tela fechada e retoma após reiniciar e desbloquear o celular. Parar a central desativa essa retomada até abri-la novamente. Restrições de bateria do Android podem interromper o acesso.",
+                    Text("Na preparação inicial, permita operação sem otimização de bateria para a recuperação automática. A central continua com a tela fechada e retoma após reiniciar e desbloquear o celular. Parar a central desativa essa retomada até abri-la novamente.",
                         color = Muted, fontSize = 11.sp)
                 }
             }
