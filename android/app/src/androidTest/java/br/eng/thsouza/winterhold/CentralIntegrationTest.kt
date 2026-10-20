@@ -18,10 +18,31 @@ class CentralIntegrationTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
 
+    private var session = ""
+    private val testPassword = "Test-only-long-password-2026"
+    private var testUserId: String? = null
+    @org.junit.Before fun authenticate() {
+        instrumentation.runOnMainSync {
+            DemoCentral.ensureStarted(context)
+            DemoCentral.webUsers!!.users.firstOrNull { it.username == "instrumentation" }?.let { DemoCentral.webUsers!!.delete(it.id) }
+            testUserId = DemoCentral.webUsers!!.add("Instrumentation", "instrumentation", testPassword).id
+        }
+        val connection = URL("http://127.0.0.1:8790/api/v1/login").openConnection() as HttpURLConnection
+        connection.requestMethod = "POST"; connection.doOutput = true
+        connection.setRequestProperty("X-Winterhold-Request", "1")
+        connection.outputStream.use { it.write(JSONObject().put("username", "instrumentation").put("password", testPassword).toString().toByteArray()) }
+        assertEquals(200, connection.responseCode)
+        session = connection.getHeaderField("Set-Cookie").substringBefore(';')
+        connection.disconnect()
+    }
+    @org.junit.After fun cleanupAccount() {
+        instrumentation.runOnMainSync { testUserId?.let { DemoCentral.webUsers?.delete(it) } }
+    }
     private fun request(path: String, action: String? = null): Pair<Int, String> {
         val connection = URL("http://127.0.0.1:8790$path").openConnection() as HttpURLConnection
         try {
-            connection.setRequestProperty("X-Winterhold-Key", DemoCentral.webSecret)
+            connection.setRequestProperty("Cookie", session)
+            connection.setRequestProperty("X-Winterhold-Request", "1")
             connection.connectTimeout = 2_000
             connection.readTimeout = 4_000
             if (action != null) {
@@ -44,7 +65,7 @@ class CentralIntegrationTest {
             if (runCatching(check).onFailure { lastError = it }.getOrDefault(false)) return
             Thread.sleep(100)
         }
-        throw AssertionError("Central não atingiu o estado esperado: ${DemoCentral.status}", lastError)
+        throw AssertionError("Central nÃ£o atingiu o estado esperado: ${DemoCentral.status}", lastError)
     }
 
     private fun publishMqttSample() {
@@ -74,7 +95,7 @@ class CentralIntegrationTest {
         }
     }
 
-    @Test fun servesDirectIpWithKeyPersistsAndSurvivesClosingActivity() {
+    @Test fun servesWithPasswordSessionPersistsAndSurvivesClosingActivity() {
         // Match the one-time preparation offered by the app, without changing other apps.
         instrumentation.uiAutomation.executeShellCommand(
             "dumpsys deviceidle whitelist +${context.packageName}"
@@ -97,7 +118,7 @@ class CentralIntegrationTest {
         assertEquals("esp", initialState.getString("mode"))
         assertFalse(initialState.has("webUsers"))
         assertTrue(initialState.getJSONObject("settings").getString("mqttSecret").isNotBlank())
-        val environment = """{"type":"saveEnvironment","environment":{"id":"ci-esp","name":"Laboratório","icon":"lab","limits":{"temperatureMin":18,"temperatureMax":25,"humidityMin":30,"humidityMax":70,"voltageMin":198,"voltageMax":242}}}"""
+        val environment = """{"type":"saveEnvironment","environment":{"id":"ci-esp","name":"LaboratÃ³rio","icon":"lab","limits":{"temperatureMin":18,"temperatureMax":25,"humidityMin":30,"humidityMax":70,"voltageMin":198,"voltageMax":242}}}"""
         assertEquals(200, request("/api/v1/action", environment).first)
         assertEquals(400, request("/api/v1/action", environment.replace("\"temperatureMin\":18", "\"temperatureMin\":30")).first)
         publishMqttSample()
@@ -106,12 +127,12 @@ class CentralIntegrationTest {
         }
         val liveState = JSONObject(request("/api/v1/action", """{"type":"mode","value":"esp"}""").second)
         assertEquals("ci-esp", liveState.getString("selectedDeviceId"))
-        assertEquals("Laboratório", liveState.getJSONArray("devices").getJSONObject(0).getString("name"))
+        assertEquals("LaboratÃ³rio", liveState.getJSONArray("devices").getJSONObject(0).getString("name"))
         assertEquals("lab", liveState.getJSONArray("devices").getJSONObject(0).getString("icon"))
         assertEquals(31.5, liveState.getJSONArray("samples").getJSONObject(0).getDouble("temperature"), 0.01)
         assertTrue(liveState.getJSONArray("events").getJSONObject(0).getString("title").contains("Temperatura"))
         assertEquals("ci-esp", liveState.getJSONArray("events").getJSONObject(0).getString("deviceId"))
-        val demo = JSONObject(request("/api/v1/action", """{"type":"mode","value":"demo"}""").second)
+        val demo = JSONObject(request("/api/v1/action", """{"type":"mode","value":"demo","acknowledgeRealDelivery":true}""").second)
         assertEquals(5, demo.getJSONArray("devices").length())
         val reading = """{"type":"setDemoReading","id":"demo_servidores","temperature":30,"humidity":40,"voltage":220}"""
         assertEquals(200, request("/api/v1/action", reading).first)
@@ -143,7 +164,7 @@ class CentralIntegrationTest {
         val state = JSONObject(request("/api/v1/action", """{"type":"mode","value":"esp"}""").second)
         assertEquals(29, state.getJSONObject("limits").getInt("temperature"))
         assertEquals(230, state.getJSONObject("limits").getInt("nominalVoltage"))
-        assertEquals("Laboratório", state.getJSONArray("devices").getJSONObject(0).getString("name"))
+        assertEquals("LaboratÃ³rio", state.getJSONArray("devices").getJSONObject(0).getString("name"))
         assertFalse(state.getBoolean("running"))
         assertEquals(400, request("/api/v1/action", """{"type":"limit","key":"temperature","value":900}""").first)
         instrumentation.runOnMainSync { reopened.finish() }

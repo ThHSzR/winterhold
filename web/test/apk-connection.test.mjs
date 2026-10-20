@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import * as demo from '../demo.js';
 
-test('web conecta com chave e retoma o APK após indisponibilidade sem usar dados da prévia', async () => {
+test('web conecta com sessão e retoma o APK apÃ³s indisponibilidade sem usar dados da prÃ©via', async () => {
   const source = (await readFile(new URL('../app.js', import.meta.url), 'utf8'))
     .replace(/^import[\s\S]*?from '\.\/demo\.js';\s*/, '');
   const elements = new Map();
@@ -13,15 +13,15 @@ test('web conecta com chave e retoma o APK após indisponibilidade sem usar dado
   let available = true;
   const snapshot = { ...demo.createDemoState(), running: false };
   const context = vm.createContext({
-    ...demo, AbortSignal, console, sessionStorage: { getItem: () => 'test-key', setItem() {} },
+    ...demo, AbortSignal, console, sessionStorage: { getItem: () => 'test-key', setItem() {}, removeItem() {} },
     document: {
       querySelector(selector) {
-        if (!elements.has(selector)) elements.set(selector, { hidden: true, innerHTML: '', textContent: '' });
+        if (!elements.has(selector)) elements.set(selector, { hidden: true, innerHTML: '', textContent: '', addEventListener() {} });
         return elements.get(selector);
       },
       addEventListener() {}
     },
-    window: { addEventListener() {} },
+    window: { addEventListener() {} }, location: { protocol: 'http:', hostname: 'localhost' },
     setInterval(callback) { timers.push(callback); },
     fetch: async (path, options) => {
       requests.push({ path, options });
@@ -36,7 +36,7 @@ test('web conecta com chave e retoma o APK após indisponibilidade sem usar dado
   assert.equal(vm.runInContext('backend', context), 'android');
   assert.equal(vm.runInContext('state.running', context), false);
   assert.ok(requests.some(r => r.path === '/api/v1/state'));
-  assert.ok(requests.filter(r => r.path === '/api/v1/state').every(r => r.options.headers?.['X-Winterhold-Key'] === 'test-key'));
+  assert.ok(requests.filter(r => r.path === '/api/v1/state').every(r => r.options.credentials === 'same-origin' && !r.options.headers?.['X-Winterhold-Key']));
 
   available = false;
   timers[0]();

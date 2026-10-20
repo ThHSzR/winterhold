@@ -10,10 +10,10 @@ test('web shows separate environment identity and bounds without injecting names
     .replace(/\nboot\(\);\s*$/, '');
   const elements = new Map();
   const context = vm.createContext({
-    ...demo, sessionStorage: { getItem: () => 'key' },
+    ...demo, sessionStorage: { getItem: () => 'key', removeItem() {} },
     document: {
       querySelector(selector) {
-        if (!elements.has(selector)) elements.set(selector, { innerHTML: '', hidden: true });
+        if (!elements.has(selector)) elements.set(selector, { innerHTML: '', hidden: true, addEventListener() {} });
         return elements.get(selector);
       },
       addEventListener() {}
@@ -31,8 +31,8 @@ test('web shows separate environment identity and bounds without injecting names
     ({ overview: overview(), environments: environmentsPage() });`, context);
   assert.match(result.overview, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(result.overview, /<script>alert\(1\)<\/script>/);
-  assert.match(result.overview, /19,0–24,0 °C/);
-  assert.match(result.environments, /205,0–235,0 V/);
+  assert.match(result.overview, /19,0â€“24,0 Â°C/);
+  assert.match(result.environments, /205,0â€“235,0 V/);
   assert.match(result.environments, /Sala 02/);
   assert.match(result.environments, /data-action="edit-environment"/);
 });

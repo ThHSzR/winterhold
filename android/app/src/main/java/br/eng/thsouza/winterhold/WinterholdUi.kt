@@ -685,6 +685,9 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
     var bridgeMessage by remember { mutableStateOf("") }
     var newWebUser by remember { mutableStateOf("") }
     var webUserMessage by remember { mutableStateOf("") }
+    var newWebLogin by remember { mutableStateOf("") }
+    var newWebPassword by remember { mutableStateOf("") }
+    var demoConfirmation by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { DemoCentral.refreshUrls() }
     LazyColumn(modifier, contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { PageTitle("Ajustes", "Integrações da central Android") }
@@ -701,24 +704,50 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
         } } }
         item { PanelCard { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SectionTitle("Usuários de acesso web")
-            Text("Gerencie as chaves somente no celular. A rotação invalida a chave antiga imediatamente.", color = Muted, fontSize = 12.sp)
+            Text("Usuários e sessões são gerenciados somente neste APK. Use HTTPS na porta 8792.", color = Muted, fontSize = 12.sp)
+            Text("Certificado SHA-256: ${WebTls.fingerprint}", color = Muted, fontSize = 11.sp)
+            DemoCentral.webUsers?.initialPassword?.let { initial ->
+                SelectionContainer { Text("Primeiro acesso: admin / $initial", color = Amber) }
+                Text("Anote a senha agora ou redefina abaixo. Ela não é guardada em texto.", color = Muted, fontSize = 12.sp)
+            }
             DemoCentral.webUsers?.users?.forEach { access ->
-                Text("${access.name} · ${if (access.active) "ativo" else "desativado"}")
-                SelectionContainer { Text(access.key, color = Amber, fontSize = 12.sp) }
-                Row { TextButton(onClick = { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                    .setPrimaryClip(ClipData.newPlainText("Chave web", access.key)) }) { Text("Copiar") }
-                    TextButton(onClick = { DemoCentral.webUsers?.rotate(access.id) }) { Text("Trocar chave") }
+                var editName by remember(access.id) { mutableStateOf(access.name) }
+                var editLogin by remember(access.id) { mutableStateOf(access.username) }
+                var editPassword by remember(access.id) { mutableStateOf("") }
+                Text("${access.name} · ${access.username} · ${if (access.active) "ativo" else "desativado"}")
+                if (access.legacyUntil != 0L) Text("Migração: use a chave antiga como senha por até 7 dias; redefina aqui.", color = Amber, fontSize = 12.sp)
+                OutlinedTextField(editName, { editName = it }, label = { Text("Nome") }, singleLine = true)
+                OutlinedTextField(editLogin, { editLogin = it }, label = { Text("Login") }, singleLine = true)
+                OutlinedTextField(editPassword, { editPassword = it }, label = { Text("Nova senha (mínimo 12 caracteres)") }, singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+                TextButton(onClick = { runCatching {
+                    DemoCentral.webUsers?.edit(access.id, editName, editLogin)
+                    if (editPassword.isNotEmpty()) DemoCentral.webUsers?.resetPassword(access.id, editPassword)
+                    editPassword = ""; webUserMessage = "Usuário salvo; sessões revogadas"
+                }.onFailure { webUserMessage = it.message.orEmpty() } }) { Text("Salvar usuário / senha") }
+                Row {
+                    TextButton(onClick = { DemoCentral.webUsers?.revoke(access.id); webUserMessage = "Sessões revogadas" }) { Text("Revogar sessões") }
                     TextButton(onClick = { runCatching { DemoCentral.webUsers?.setActive(access.id, !access.active) }
-                        .onFailure { webUserMessage = it.message.orEmpty() } }) { Text(if (access.active) "Desativar" else "Ativar") } }
+                        .onFailure { webUserMessage = it.message.orEmpty() } }) { Text(if (access.active) "Desativar" else "Ativar") }
+                }
+                TextButton(onClick = { runCatching { DemoCentral.webUsers?.delete(access.id) }
+                    .onFailure { webUserMessage = it.message.orEmpty() } }) { Text("Excluir usuário") }
             }
             OutlinedTextField(newWebUser, { newWebUser = it }, label = { Text("Nome do novo usuário") }, singleLine = true)
-            TextButton(onClick = { runCatching { DemoCentral.webUsers?.add(newWebUser); newWebUser = "" }
+            OutlinedTextField(newWebLogin, { newWebLogin = it }, label = { Text("Login do novo usuário") }, singleLine = true)
+            OutlinedTextField(newWebPassword, { newWebPassword = it }, label = { Text("Senha (mínimo 12 caracteres)") }, singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+            TextButton(onClick = { runCatching { DemoCentral.webUsers?.add(newWebUser, newWebLogin, newWebPassword)
+                newWebUser = ""; newWebLogin = ""; newWebPassword = ""; webUserMessage = "Usuário criado" }
                 .onFailure { webUserMessage = it.message.orEmpty() } }) { Text("Adicionar usuário") }
             if (webUserMessage.isNotEmpty()) Text(webUserMessage, color = Amber)
         } } }
         item { PanelCard { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SectionTitle("Modo demonstração")
-            ToggleRow("Usar leituras fictícias", !store.liveMode) { enabled -> store.liveMode = !enabled; store.simulationRunning = enabled }
+            ToggleRow("Usar leituras fictícias", !store.liveMode) { enabled ->
+                if (enabled) demoConfirmation = true else { store.liveMode = true; store.simulationRunning = false }
+            }
+            Text("Condições simuladas podem enviar SMS, e-mail e WhatsApp reais aos destinatários cadastrados.", color = Amber, fontSize = 12.sp)
             if (!store.liveMode) {
                 ToggleRow("Atualização automática", store.simulationRunning) { store.simulationRunning = it }
                 ToggleRow("Simular desconexão", store.offlineDemo) { if (it != store.offlineDemo) store.simulateDisconnection() }
@@ -741,7 +770,7 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
             if (!smsGranted) OutlinedButton(onClick = { smsPermission.launch(Manifest.permission.SEND_SMS) }) {
                 Text("Permitir envio de SMS neste aparelho")
             }
-            Text("Configure os destinatários em Equipe. Apenas o comando explícito Testar notificação envia no modo demo.", color = Muted, fontSize = 12.sp)
+            Text("Configure os destinatários em Equipe. Violações e normalizações do demo enviam automaticamente mensagens reais marcadas SIMULADO.", color = Muted, fontSize = 12.sp)
         } } }
         item { PanelCard { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SectionTitle("E-mail · SMTP TLS (465)")
@@ -758,7 +787,9 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
         } } }
         item { PanelCard { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SectionTitle("WhatsApp · ponte Baileys")
-            Text("Node executa Baileys no backend; a central Android envia alertas à ponte por HTTPS (ou HTTP no próprio aparelho).", color = Muted, fontSize = 12.sp)
+            Text("O APK instala e mantém seu próprio Node/Baileys. A sessão fica no armazenamento privado do aplicativo.", color = Muted, fontSize = 12.sp)
+            Text(EmbeddedBridge.status, color = Ice)
+            BridgePairingPanel()
             OutlinedTextField(bridgeUrl, { bridgeUrl = it }, label = { Text("URL da ponte HTTPS") }, singleLine = true)
             OutlinedTextField(bridgeToken, { bridgeToken = it }, label = { Text("Chave da ponte (vazio mantém a atual)") }, singleLine = true,
                 visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
@@ -771,6 +802,11 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
         } } }
         item { Text("Destinatários: abra Alertas → Equipe.", color = Muted, fontSize = 12.sp) }
     }
+    if (demoConfirmation) AlertDialog(onDismissRequest = { demoConfirmation = false },
+        title = { Text("Ativar demonstração?") },
+        text = { Text("Leituras fictícias fora dos limites podem enviar SMS, e-mail e WhatsApp reais aos destinatários cadastrados. As mensagens serão identificadas como SIMULADO.") },
+        confirmButton = { TextButton(onClick = { store.liveMode = false; store.simulationRunning = true; demoConfirmation = false }) { Text("Ativar e permitir alertas") } },
+        dismissButton = { TextButton(onClick = { demoConfirmation = false }) { Text("Cancelar") } })
 }
 
 @Composable

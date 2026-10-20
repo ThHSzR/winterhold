@@ -5,5 +5,6 @@
   "type": "module",
   "engines": { "node": ">=20" },
   "scripts": { "start": "node server.js", "test": "node --test" },
-  "dependencies": { "@whiskeysockets/baileys": "^6.7.0", "qrcode": "^1.5.4" }
+  "dependencies": { "@whiskeysockets/baileys": "6.7.24", "qrcode": "1.5.4" }
 }
+

@@ -6,7 +6,7 @@ import {
 
 const state = createDemoState();
 let backend = 'loading';
-let webKey = sessionStorage.getItem('winterhold-web-key') || '';
+sessionStorage.removeItem('winterhold-web-key');
 const pages = {
   inicio: ['Visão geral', 'home'],
   ambientes: ['Ambientes', 'database'],
@@ -27,7 +27,7 @@ const connectionBanner = document.querySelector('#connection-banner');
 function showUnlock() {
   backend = 'locked';
   connectionBanner.hidden = true;
-  content.innerHTML = `<section class="card unlock-card"><span class="eyebrow">CENTRAL ANDROID</span><h1>Acessar Winterhold</h1><p>Copie a chave de acesso web exibida nos Ajustes do aplicativo.</p><form id="unlock-form"><label class="form-field">Chave web<input name="key" type="password" autocomplete="off" required></label><button class="btn" type="submit">Entrar</button></form></section>`;
+  content.innerHTML = `<section class="card unlock-card"><span class="eyebrow">CENTRAL ANDROID</span><h1>Acessar Winterhold</h1><p>Use o usuário e a senha cadastrados nos Ajustes do aplicativo.</p><form id="unlock-form"><label class="form-field">Usuário<input name="username" autocomplete="username" required maxlength="40"></label><label class="form-field">Senha<input name="password" type="password" autocomplete="current-password" required maxlength="256"></label><button class="btn" type="submit">Entrar</button></form></section>`;
 }
 function connectionError(message) {
   backend = 'error';
@@ -38,7 +38,7 @@ function connectionError(message) {
 async function refreshFromApk() {
   try {
     const response = await fetch('/api/v1/state', {
-      headers: { 'X-Winterhold-Key': webKey }, cache: 'no-store', signal: AbortSignal.timeout(8_000)
+      credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8_000)
     });
     if (response.status === 401) { showUnlock(); return; }
     if (!response.ok) throw new Error(`Central indisponível (${response.status})`);
@@ -55,7 +55,7 @@ async function sendAction(payload, previewAction) {
     try {
       const response = await fetch('/api/v1/action', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Winterhold-Key': webKey },
+        credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Winterhold-Request': '1' },
         signal: AbortSignal.timeout(8_000),
         body: JSON.stringify(payload)
       });
@@ -81,6 +81,7 @@ async function boot() {
     const health = await response.json();
     if (health.mode === 'android-central' || health.mode === 'android-demo') {
       document.querySelector('.page-footer').textContent = 'Winterhold · Central no APK. Saúde do celular medida no Android.';
+      if (location.protocol === 'http:' && !['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname)) { location.replace(`https://${location.hostname}:8792/`); return; }
       await refreshFromApk();
     } else if (health.mode === 'demo') {
       backend = 'preview';
@@ -269,7 +270,7 @@ function environmentsPage() {
   const devices = [...(state.devices || [])].sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || a.name.localeCompare(b.name));
   return `${pageHead('ESP32 / ESPAÇOS', 'Ambientes', state.mode === 'demo' ? 'Cinco ambientes fictícios · ajuste leituras e limites' : 'Um ESP32 por espaço · personalize limites e fixe favoritos',
     backend === 'android' && state.mode === 'esp' ? '<button class="btn" data-action="add-environment">+ Adicionar</button>' : '')}
-    ${state.mode === 'demo' ? `<section class="card settings-card"><h2>Leitura fictícia</h2><form id="demo-reading-form"><label class="form-field">Ambiente<select name="id">${devices.map(device => `<option value="${device.id}" ${device.id === state.selectedDeviceId ? 'selected' : ''}>${escapeHtml(device.name)}</option>`).join('')}</select></label><div class="environment-ranges">${[['temperature', 'Temperatura °C'], ['humidity', 'Umidade %'], ['voltage', 'Tensão V']].map(([key, label]) => `<label class="form-field">${label}<input type="number" name="${key}" step="any" required value="${state.samples[0]?.[key] ?? ''}"></label>`).join('')}</div><button class="btn" type="submit">Aplicar leitura</button></form><p>Valores fora dos limites configurados criam eventos fictícios.</p></section>` : ''}
+    ${state.mode === 'demo' ? `<section class="card settings-card"><h2>Leitura fictícia</h2><form id="demo-reading-form"><label class="form-field">Ambiente<select name="id">${devices.map(device => `<option value="${device.id}" ${device.id === state.selectedDeviceId ? 'selected' : ''}>${escapeHtml(device.name)}</option>`).join('')}</select></label><div class="environment-ranges">${[['temperature', 'Temperatura °C'], ['humidity', 'Umidade %'], ['voltage', 'Tensão V']].map(([key, label]) => `<label class="form-field">${label}<input type="number" name="${key}" step="any" required value="${state.samples[0]?.[key] ?? ''}"></label>`).join('')}</div><button class="btn" type="submit">Aplicar leitura</button></form><p>Violações e normalizações enviam alertas reais identificados como SIMULADO conforme os destinos e canais configurados.</p></section>` : ''}
     <div class="environment-list">${devices.map(device => `<article class="card environment-card">
       <span class="environment-avatar" aria-hidden="true">${environmentIcons[device.icon] || '❄️'}</span>
       <div class="environment-copy"><strong>${escapeHtml(device.name)}</strong><small>${escapeHtml(device.id)} · ${state.mode === 'demo' ? 'demonstração' : device.online ? 'online' : 'aguardando ESP'}</small>
@@ -285,15 +286,15 @@ function settingsPage() {
   return `${pageHead('CENTRAL / AJUSTES', 'Ajustes', 'Configurações compartilhadas com o aplicativo Android')}
     <div class="settings-grid">
       <section class="card settings-card"><h2>Central e acesso</h2><p>${escapeHtml(config.webStatus || 'Prévia independente')}</p><ul>${url}</ul>
-        <p>Porta web 8790 · HTTP local. Para acesso externo, use VPN ou proxy HTTPS.</p>
+        <p>HTTPS na porta 8792. Confira o certificado SHA-256 nos Ajustes do APK antes do primeiro login. HTTP só permite autenticação em localhost via ADB.</p>
         <p>Permissão para notificações: ${config.notificationsGranted ? 'concedida' : 'pendente'} · bateria sem restrição: ${config.batteryExempt ? 'sim' : 'pendente'}. Conceda permissões do sistema no celular.</p>
-        <p>Os usuários e as chaves web são gerenciados exclusivamente no aplicativo.</p></section>
+        <p>Usuários, senhas e revogação de sessões são gerenciados exclusivamente no aplicativo.</p></section>
       <section class="card settings-card"><h2>ESP32 / MQTT</h2><p>${escapeHtml(config.mqttStatus || 'Sem broker')}</p><p>Porta 1883 · usuário winterhold · host: IP do celular</p><p>Chave MQTT: <code>${escapeHtml(config.mqttSecret || '—')}</code></p></section>
       <section class="card settings-card"><h2>Canais de alerta</h2>${channels}<p>SMS neste celular: ${config.smsGranted ? 'permitido' : 'permissão pendente'}.</p><p>Edite destinos em <a href="#equipe">Equipe</a>.</p></section>
-      <section class="card settings-card"><h2>Demonstração</h2><div class="settings-line"><span>Usar dados fictícios</span><label class="toggle"><input type="checkbox" data-action="mode" ${state.mode === 'demo' ? 'checked' : ''} aria-label="Ativar demonstração"></label></div>
+      <section class="card settings-card"><h2>Demonstração</h2><p>Condições simuladas podem enviar SMS, e-mail e WhatsApp reais aos destinatários cadastrados.</p><div class="settings-line"><span>Usar dados fictícios</span><label class="toggle"><input type="checkbox" data-action="mode" ${state.mode === 'demo' ? 'checked' : ''} aria-label="Ativar demonstração"></label></div>
         ${state.mode === 'demo' ? `<div class="settings-line"><span>Atualização automática</span><label class="toggle"><input type="checkbox" data-action="running" ${state.running ? 'checked' : ''}></label></div><div class="settings-line"><span>Simular desconexão</span><label class="toggle"><input type="checkbox" data-action="offline" ${state.offline ? 'checked' : ''}></label></div>` : '<p>Ative para explorar cinco ambientes mesmo sem ESP conectado.</p>'}</section>
     </div>
-    <section class="card settings-card"><h2>E-mail e WhatsApp</h2><p>SMTP TLS porta 465 · senha ${config.smtpConfigured ? 'configurada' : 'pendente'}. Ponte Baileys · chave ${config.bridgeConfigured ? 'configurada' : 'pendente'}.</p>
+    <section class="card settings-card"><h2>E-mail e WhatsApp</h2><p>${escapeHtml(config.bridgeRuntime || "")}</p><p>SMTP TLS porta 465 · senha ${config.smtpConfigured ? 'configurada' : 'pendente'}. Ponte Baileys · chave ${config.bridgeConfigured ? 'configurada' : 'pendente'}.</p>
       <form id="delivery-form" autocomplete="off">
         <label class="form-field">Servidor SMTP<input name="smtpHost" value="${escapeHtml(config.smtpHost || '')}" placeholder="smtp.exemplo.com"></label>
         <label class="form-field">Usuário SMTP<input name="smtpUser" value="${escapeHtml(config.smtpUser || '')}"></label>
@@ -307,6 +308,7 @@ function settingsPage() {
 }
 
 function render() {
+  document.querySelector('#logout-button').hidden = backend !== 'android';
   if (backend === 'loading' || backend === 'error' || backend === 'locked') return;
   const page = currentPage();
   document.querySelector('#side-nav').innerHTML = Object.keys(pages).map(p => navItem(p)).join('');
@@ -390,12 +392,13 @@ document.addEventListener('click', async e => {
   const target = e.target.closest('[data-action]');
   if (!target) return;
   const action = target.dataset.action;
+  if (action === 'mode' && target.checked && !window.confirm('O demo pode enviar SMS, e-mail e WhatsApp reais aos destinatários cadastrados. Ativar e permitir alertas simulados?')) { target.checked = false; return; }
   if (action === 'dismiss' && e.target === target) { closeDialog(); return; }
   if (action === 'bridge-status') {
     const status = document.querySelector('#bridge-status');
     if (backend !== 'android') { status.textContent = 'Conexão disponível apenas com o APK.'; return; }
     try {
-      const response = await fetch('/api/v1/bridge', { headers: { 'X-Winterhold-Key': webKey }, cache: 'no-store' });
+      const response = await fetch('/api/v1/bridge', { credentials: 'same-origin', cache: 'no-store' });
       if (!response.ok) throw new Error((await response.json()).error || `HTTP ${response.status}`);
       const value = await response.json();
       status.innerHTML = `<p>WhatsApp: ${escapeHtml(value.connection)}</p>${value.qr?.startsWith('data:image/png;base64,') ? `<img src="${value.qr}" width="220" height="220" alt="QR para vincular WhatsApp">` : ''}`;
@@ -479,10 +482,11 @@ document.addEventListener('click', async e => {
 document.addEventListener('change', async e => {
   const target = e.target;
   const action = target.dataset.action;
+  if (action === 'mode' && target.checked && !window.confirm('O demo pode enviar SMS, e-mail e WhatsApp reais aos destinatários cadastrados. Ativar e permitir alertas simulados?')) { target.checked = false; return; }
   if (backend === 'android') {
     const payload = ({
       running: () => ({ type: 'running', value: target.checked }),
-      mode: () => ({ type: 'mode', value: target.checked ? 'demo' : 'esp' }),
+      mode: () => ({ type: 'mode', value: target.checked ? 'demo' : 'esp', acknowledgeRealDelivery: target.checked }),
       offline: () => ({ type: 'offline', value: target.checked }),
       channel: () => ({ type: 'channel', channel: target.dataset.channel, value: target.checked }),
       'contact-active': () => ({ type: 'contactActive', id: target.dataset.id, value: target.checked }),
@@ -533,9 +537,15 @@ boot();
 document.addEventListener('submit', async event => {
   if (event.target.id !== 'unlock-form') return;
   event.preventDefault();
-  webKey = new FormData(event.target).get('key').trim();
-  sessionStorage.setItem('winterhold-web-key', webKey);
-  await refreshFromApk();
+  const fields = new FormData(event.target);
+  try {
+    const response = await fetch('/api/v1/login', { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-Winterhold-Request': '1' },
+      body: JSON.stringify({ username: String(fields.get('username')).trim(), password: String(fields.get('password')) }) });
+    event.target.reset();
+    if (!response.ok) throw new Error((await response.json()).error || 'Falha no login');
+    await refreshFromApk();
+  } catch (error) { connectionBanner.hidden = false; connectionBanner.textContent = error.message; }
 });
 
 document.addEventListener('submit', async event => {
@@ -558,4 +568,12 @@ document.addEventListener('submit', async event => {
         smtpFrom: payload.smtpFrom, bridgeUrl: payload.bridgeUrl });
     })) { connectionBanner.hidden = false; connectionBanner.textContent = 'Configurações salvas no celular.'; }
   }
+});
+
+document.querySelector('#logout-button').addEventListener('click', async () => {
+  try {
+    const response = await fetch('/api/v1/logout', { method: 'POST', credentials: 'same-origin', headers: { 'X-Winterhold-Request': '1' } });
+    if (!response.ok) throw new Error('Não foi possível encerrar a sessão');
+    showUnlock(); document.querySelector('#logout-button').hidden = true;
+  } catch (error) { connectionBanner.hidden = false; connectionBanner.textContent = error.message; }
 });

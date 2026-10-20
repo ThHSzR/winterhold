@@ -12,8 +12,8 @@ android {
         applicationId = "br.eng.thsouza.winterhold"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6-web-demo"
+        versionCode = 7
+        versionName = "0.7-integrated-central"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -33,6 +33,7 @@ android {
     buildFeatures {
         compose = true
     }
+    packaging { jniLibs { useLegacyPackaging = true; keepDebugSymbols += "**/*.so" } }
     sourceSets.getByName("main").assets.srcDir("../../web")
 }
 

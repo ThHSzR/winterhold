@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import QRCode from 'qrcode';
 import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
+import pino from 'pino';
 
 const token = process.env.WINTERHOLD_BRIDGE_TOKEN;
 if (!token || token.length < 32) throw new Error('Defina WINTERHOLD_BRIDGE_TOKEN com ao menos 32 caracteres aleatórios');
@@ -13,7 +14,8 @@ const dataDir = path.resolve(process.env.WINTERHOLD_BRIDGE_DATA || './private-se
 fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
 const ledgerPath = path.join(dataDir, 'reserved.json');
 const reserved = new Set(fs.existsSync(ledgerPath) ? JSON.parse(fs.readFileSync(ledgerPath, 'utf8')) : []);
-let socket, qr = null, connection = 'starting', reconnectTimer;
+let socket, qr = null, connection = 'starting', reconnectTimer, attempts = 0;
+const quiet = pino({ level: 'silent' });
 
 function authenticated(req) {
   const given = req.headers.authorization?.replace(/^Bearer /, '') || '';
@@ -32,20 +34,27 @@ function reserve(id) {
 }
 async function connect() {
   const { state, saveCreds } = await useMultiFileAuthState(path.join(dataDir, 'auth'));
-  socket = makeWASocket({ auth: state, printQRInTerminal: false });
+  socket = makeWASocket({ auth: state, logger: quiet, printQRInTerminal: false,
+    markOnlineOnConnect: false, syncFullHistory: false });
   socket.ev.on('creds.update', saveCreds);
   socket.ev.on('connection.update', ({ connection: current, lastDisconnect, qr: nextQr }) => {
     if (nextQr) { qr = nextQr; connection = 'pairing'; console.log('Emparelhe o WhatsApp pelo QR em /status via APK.'); }
-    if (current === 'open') { qr = null; connection = 'connected'; console.log('WhatsApp conectado.'); }
+    if (current === 'open') { qr = null; connection = 'connected'; attempts = 0; }
     if (current === 'close') {
       qr = null; connection = 'disconnected';
       const code = lastDisconnect?.error?.output?.statusCode;
-      if (code !== DisconnectReason.loggedOut) reconnectTimer = setTimeout(() => connect().catch(console.error), 5000);
-      else console.error('Sessão encerrada; remova private-session/auth e emparelhe novamente.');
+      clearTimeout(reconnectTimer);
+      if (code !== DisconnectReason.loggedOut) reconnectTimer = setTimeout(() => connect().catch(retry), Math.min(60_000, 2000 * 2 ** Math.min(attempts++, 5)));
+      else connection = 'logged_out';
     }
   });
 }
-await connect();
+function retry() {
+  connection = 'reconnecting';
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(() => connect().catch(retry), 10_000);
+}
+connect().catch(retry);
 http.createServer(async (req, res) => {
   if (!authenticated(req)) return reply(res, 401, { error: 'Não autorizado' });
   if (req.method === 'GET' && req.url === '/status') {
@@ -68,7 +77,7 @@ http.createServer(async (req, res) => {
     await socket.sendMessage(`${to.slice(1)}@s.whatsapp.net`, { text: message });
     return reply(res, 202, { status: 'submitted' });
   } catch (error) {
-    console.error('Falha de envio:', error);
+    console.error('Falha de envio; confira a entrega antes de tentar novamente.');
     return reply(res, 503, { error: 'Envio incerto; consulte o telefone antes de repetir' });
   }
 }).listen(port, host, () => console.log(`Ponte Baileys em ${host}:${port}`));

@@ -1,0 +1,54 @@
+{
+  "repository": "https://packages.termux.dev/apt/termux-main/",
+  "abi": "arm64-v8a",
+  "packages": [
+    {
+      "Package": "nodejs-lts",
+      "Version": "24.18.0-1",
+      "Filename": "pool/main/n/nodejs-lts/nodejs-lts_24.18.0-1_aarch64.deb",
+      "SHA256": "490f4d08c45b25a7ea7db6ee466ebb3ee61f07083260b85332704ed018f59a87"
+    },
+    {
+      "Package": "c-ares",
+      "Version": "1.34.9",
+      "Filename": "pool/main/c/c-ares/c-ares_1.34.9_aarch64.deb",
+      "SHA256": "623d84855e176f3f2a415d24c0e1d2f529356f4b5439bb3313e6d7ff0da4585c"
+    },
+    {
+      "Package": "ca-certificates",
+      "Version": "1:2026.10.20",
+      "Filename": "pool/main/c/ca-certificates/ca-certificates_1:2026.10.20_all.deb",
+      "SHA256": "2186ab9752ae1e705eea6fd69af0c114715b7a1b2a0b4d239ae59371b6001984"
+    },
+    {
+      "Package": "libc++",
+      "Version": "30",
+      "Filename": "pool/main/libc/libc++/libc++_30_aarch64.deb",
+      "SHA256": "53d0b84a7ba7459024257cb94d5b136fe13ef858567f65a8064b35950799f2ca"
+    },
+    {
+      "Package": "libicu",
+      "Version": "78.3",
+      "Filename": "pool/main/libi/libicu/libicu_78.3_aarch64.deb",
+      "SHA256": "f536403f65a08fe0df6e7304184e902d54def77d5c3bd5edfd9109d57601d276"
+    },
+    {
+      "Package": "libsqlite",
+      "Version": "3.54.1",
+      "Filename": "pool/main/libs/libsqlite/libsqlite_3.54.1_aarch64.deb",
+      "SHA256": "0856cac8cc87f6e112f2eef4fcac6ad5cb08209ecb7cc260f997874fc186a3c0"
+    },
+    {
+      "Package": "openssl",
+      "Version": "1:3.6.5",
+      "Filename": "pool/main/o/openssl/openssl_1:3.6.5_aarch64.deb",
+      "SHA256": "a2fb7856875e63ef6b90442752e05974813372c3ca86d2513a78ea43c67a0f8b"
+    },
+    {
+      "Package": "zlib",
+      "Version": "1.3.2",
+      "Filename": "pool/main/z/zlib/zlib_1.3.2_aarch64.deb",
+      "SHA256": "75e7d0af17fcc3b40004309fdc00a1ddb9ae08346dce5e269902c34ac3966ac9"
+    }
+  ]
+}

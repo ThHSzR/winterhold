@@ -99,9 +99,10 @@ internal class AlertDelivery(private val context: Context) {
     }
     fun status(eventId: String, contactId: String, channel: Channel): String? =
         ledger.getString("$eventId:$contactId:${channel.name}", null)
+    fun destination(eventId: String, contactId: String, channel: Channel): String? = ledger.getString("$eventId:$contactId:${channel.name}:destination", null)
     fun prime(store: DemoStore) { knownEvents.addAll(store.events.map { it.id }) }
     fun dispatch(store: DemoStore, events: List<AlertEvent>) {
-        events.filter { knownEvents.add(it.id) && !it.simulated && !it.resolved && it.severity != Severity.INFO }.forEach { event ->
+        events.filter { knownEvents.add(it.id) && (!it.simulated || !store.liveMode) && (!it.resolved || it.title.contains("normalizada")) && (it.severity != Severity.INFO || it.title.contains("normalizada")) && !it.title.startsWith("Teste de") }.forEach { event ->
             deliver(store, event, false)
         }
     }
@@ -111,6 +112,7 @@ internal class AlertDelivery(private val context: Context) {
         deliver(store, event, true)
     }
     private fun deliver(store: DemoStore, event: AlertEvent, test: Boolean) {
+            val marker = if (test) "[TESTE SIMULADO] " else if (event.simulated) "[SIMULADO] " else ""
             val noticeId = "notice:${event.id}"
             if (ledger.getString(noticeId, null) == null) {
                 runCatching {
@@ -119,30 +121,34 @@ internal class AlertDelivery(private val context: Context) {
                         val intent = PendingIntent.getActivity(context, event.id.hashCode(), Intent(context, MainActivity::class.java),
                             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
                         notifications.notify(event.id, 0, Notification.Builder(context, "winterhold-alerts")
-                            .setSmallIcon(android.R.drawable.ic_dialog_alert).setContentTitle(if (test) "[TESTE] ${event.title}" else event.title)
+                            .setSmallIcon(android.R.drawable.ic_dialog_alert).setContentTitle("$marker${event.title}")
                             .setContentText(event.detail).setStyle(Notification.BigTextStyle().bigText(event.detail))
                             .setContentIntent(intent).setAutoCancel(true).build())
                     }
-                    record(noticeId, "shown")
+                    record(noticeId, if (Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) "shown" else "blocked: permissão de notificação ausente")
                 }.onFailure { Log.e("Winterhold", "Notificação local falhou", it) }
             }
             store.routesFor(event).forEach { (contact, channels) -> channels.forEach { channel ->
-                val destination = if (channel == Channel.EMAIL) contact.email else contact.phone
-                if (destination.isBlank()) return@forEach
-                if (channel == Channel.EMAIL && (settings.smtpHost.isBlank() || settings.smtpUser.isBlank() ||
-                    settings.smtpFrom.isBlank() || settings.smtpPassword.isBlank())) return@forEach
-                if (channel == Channel.SMS && context.checkSelfPermission(Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) return@forEach
-                if (channel == Channel.WHATSAPP && (settings.bridgeUrl.isBlank() || settings.bridgeToken.isBlank())) return@forEach
                 val id = "${event.id}:${contact.id}:${channel.name}"
                 if (ledger.getString(id, null) != null) return@forEach
+                val destination = if (channel == Channel.EMAIL) contact.email else contact.phone
+                val blocked = when {
+                    destination.isBlank() -> "blocked: destino ausente"
+                    channel == Channel.EMAIL && (settings.smtpHost.isBlank() || settings.smtpUser.isBlank() || settings.smtpFrom.isBlank() || settings.smtpPassword.isBlank()) -> "blocked: configure SMTP"
+                    channel == Channel.SMS && context.checkSelfPermission(Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED -> "blocked: permissão SMS ausente"
+                    channel == Channel.WHATSAPP && (settings.bridgeUrl.isBlank() || settings.bridgeToken.isBlank()) -> "blocked: configure WhatsApp"
+                    else -> null
+                }
+                record("$id:destination", destination)
+                if (blocked != null) { record(id, blocked); return@forEach }
                 runCatching { record(id, "reserved") }.onFailure { Log.e("Winterhold", "Registro de entrega falhou", it) }
                     .onSuccess {
-                        val message = "Winterhold | ${if (test) "[TESTE] " else ""}${event.title}: ${event.detail}"
+                        val message = "Winterhold | ${marker}${event.title}: ${event.detail}"
                         executor.execute {
                             runCatching {
                                 when (channel) {
                                     Channel.SMS -> sms(destination, message, id)
-                                    Channel.EMAIL -> { smtp(destination, if (test) "[TESTE] ${event.title}" else event.title, message); record(id, "submitted") }
+                                    Channel.EMAIL -> { smtp(destination, "$marker${event.title}", message); record(id, "submitted") }
                                     Channel.WHATSAPP -> { whatsapp(destination, message, id); record(id, "submitted") }
                                 }
                             }.onFailure { error ->
