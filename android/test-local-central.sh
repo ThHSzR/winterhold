@@ -19,14 +19,16 @@ for attempt in $(seq 1 30); do
   if curl --max-time 3 --fail --silent http://127.0.0.1:18790/healthz; then break; fi
   sleep 1
 done
-curl --max-time 5 --fail --silent -H 'Content-Type: application/json' \
+web_key=$(adb shell run-as br.eng.thsouza.winterhold cat shared_prefs/web_access.xml | \
+  python3 -c 'import sys,xml.etree.ElementTree as ET; print(ET.fromstring(sys.stdin.read()).find("./string[@name=\"secret\"]").text)')
+curl --max-time 5 --fail --silent -H "X-Winterhold-Key: $web_key" -H 'Content-Type: application/json' \
   --data '{"type":"running","value":false}' http://127.0.0.1:18790/api/v1/action
-curl --max-time 5 --fail --silent -H 'Content-Type: application/json' \
+curl --max-time 5 --fail --silent -H "X-Winterhold-Key: $web_key" -H 'Content-Type: application/json' \
   --data '{"type":"limit","key":"temperature","value":29}' http://127.0.0.1:18790/api/v1/action
 check_central() {
   local response
   for attempt in $(seq 1 60); do
-    if response=$(curl --max-time 4 --fail --silent http://127.0.0.1:18790/api/v1/state); then
+    if response=$(curl --max-time 4 --fail --silent -H "X-Winterhold-Key: $web_key" http://127.0.0.1:18790/api/v1/state); then
       python3 -c 'import json,sys; s=json.loads(sys.argv[1]); assert s["limits"]["temperature"] == 29; assert s["running"] is False' "$response"
       return
     fi
