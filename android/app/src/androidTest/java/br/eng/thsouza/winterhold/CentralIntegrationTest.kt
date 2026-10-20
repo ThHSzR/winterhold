@@ -21,9 +21,15 @@ class CentralIntegrationTest {
     private var session = ""
     private val testPassword = "Test-only-long-password-2026"
     private var testUserId: String? = null
+    private var originalState: String? = null
+    private var originalSettings: List<String>? = null
     @org.junit.Before fun authenticate() {
         instrumentation.runOnMainSync {
             DemoCentral.ensureStarted(context)
+            originalState = DemoCentral.store.savedJson()
+            val settings = DeliverySettings(context)
+            originalSettings = listOf(settings.smtpHost, settings.smtpUser, settings.smtpFrom, settings.bridgeUrl)
+            DemoCentral.store.contacts.clear() // MQTT fixtures must never notify real recipients.
             DemoCentral.webUsers!!.users.firstOrNull { it.username == "instrumentation" }?.let { DemoCentral.webUsers!!.delete(it.id) }
             testUserId = DemoCentral.webUsers!!.add("Instrumentation", "instrumentation", testPassword).id
         }
@@ -36,7 +42,13 @@ class CentralIntegrationTest {
         connection.disconnect()
     }
     @org.junit.After fun cleanupAccount() {
-        instrumentation.runOnMainSync { testUserId?.let { DemoCentral.webUsers?.delete(it) } }
+        instrumentation.runOnMainSync {
+            testUserId?.let { DemoCentral.webUsers?.delete(it) }
+            originalState?.let { DemoCentral.store.restoreJson(it); DemoCentral.save() }
+            originalSettings?.let { values -> DeliverySettings(context).apply {
+                smtpHost = values[0]; smtpUser = values[1]; smtpFrom = values[2]; bridgeUrl = values[3]
+            } }
+        }
     }
     private fun request(path: String, action: String? = null): Pair<Int, String> {
         val connection = URL("http://127.0.0.1:8790$path").openConnection() as HttpURLConnection
