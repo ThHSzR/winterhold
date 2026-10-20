@@ -1,6 +1,6 @@
 # Winterhold Android
 
-O APK Kotlin/Jetpack Compose é a central: recebe publicações MQTT do ESP32, avalia limiares, mantém histórico local e serve a interface web. O modo demo permanece disponível sem sensores.
+O APK Kotlin/Jetpack Compose é a central: recebe publicações MQTT do ESP32, avalia limiares, mantém histórico local e serve a interface web. O app inicia em modo real, aguardando sensores; dados de demonstração não são enviados.
 
 ## Instalar ou compilar
 
@@ -11,25 +11,34 @@ Baixe o [APK de debug da main](../dist/winterhold-demo-debug.apk), instale e abr
 1. Conecte celular e ESP32 à mesma rede Wi-Fi. Abra o aplicativo; conceda as solicitações de notificação e bateria necessárias para uso contínuo.
 2. Em **Ajustes → ESP32 / MQTT**, confira que a porta `1883` está ativa, copie a chave MQTT do aparelho e anote o IP do celular em **Acesso web pelo aplicativo**.
 3. No `backend/include/config.h`, preencha `WIFI_SSID`, `WIFI_PASSWORD`, `MQTT_HOST` com o IP do celular e `MQTT_PASSWORD` com a chave. Mantenha `MQTT_USER` como `winterhold`. Defina um `DEVICE_ID` único por ESP32. Não publique senhas ou chaves em commits.
-4. Em **Ajustes → ESP32 / MQTT → Adicionar ambiente**, cadastre o mesmo `DEVICE_ID` do firmware, nome e ícone da sala e as faixas mínima/máxima de temperatura, umidade e tensão. Repita para os demais ESPs. O cadastro também é criado automaticamente quando um ESP novo publica sua primeira amostra; personalize-o depois.
-5. Compile/grave conforme [backend/README.md](../backend/README.md). Ative **Mostrar leituras reais** no APK e selecione o ambiente na tela inicial ou nos Ajustes.
+4. Na aba **Ambientes → Adicionar ambiente**, cadastre o mesmo `DEVICE_ID` do firmware, nome e ícone da sala e as faixas mínima/máxima de temperatura, umidade e tensão. Repita para os demais ESPs. O cadastro também é criado automaticamente quando um ESP novo publica sua primeira amostra; personalize-o depois.
+5. Compile/grave conforme [backend/README.md](../backend/README.md). Selecione o ambiente na tela inicial ou na aba Ambientes e use a estrela para fixá-lo no Início.
 
 A central aceita MQTT 3.1.1 QoS 0, `CONNECT`, `PUBLISH`, `PINGREQ` e `DISCONNECT`, com até oito conexões simultâneas. Ela não é um broker MQTT completo e não implementa assinaturas. O tópico deve ser `winterhold/<DEVICE_ID>/leituras`, e o JSON deve conter `device_id` correspondente e os campos `temperatura_c`, `umidade_pct`, `tensao_rms_v` numéricos ou nulos. O horário de recebimento é usado no histórico.
 
 ## Web e estado
 
-Acesse `http://IP_DO_CELULAR:8790/` em outro dispositivo da mesma rede local. A página consulta `GET /api/v1/state` e altera o estado compartilhado por `POST /api/v1/action`. A chave MQTT só aparece nos Ajustes nativos. A API web acadêmica usa HTTP sem autenticação; utilize uma rede confiável. A página tenta reconectar a cada cinco segundos. Termux, Node e PM2 não são necessários.
+Acesse `http://IP_DO_CELULAR:8790/` em outro dispositivo da mesma rede local. A página consulta `GET /api/v1/state` e altera o estado compartilhado por `POST /api/v1/action`. A chave MQTT só aparece nos Ajustes nativos. A API exige a chave web mostrada no APK; a página solicita essa chave e a guarda apenas na sessão do navegador. O transporte HTTP local não cifra tráfego: utilize VPN/HTTPS para acesso externo. A página tenta reconectar a cada cinco segundos. Termux só é necessário para a ponte opcional de WhatsApp.
 
 O serviço Android em primeiro plano continua com a tela fechada, tenta recuperar após reboot/desbloqueio e salva o estado em arquivo privado atômico `demo-state.json`. Use **Parar central** para fechar as portas `8790` e `1883`, ou **Retomar central** para reabri-las. Forçar parada pelo sistema impede retomada até abrir o app novamente. Otimizações de bateria do fabricante e falta de rede podem interromper a coleta; mantenha o celular alimentado na bancada.
 
-Amostras e eventos reais são separados dos fictícios. O histórico guarda até 60 amostras por ESP32 (máximo 32 ambientes), e eventos são limitados a 500 na persistência. Cada ambiente tem nome, ícone e uma faixa de mínimo/máximo independente para as três métricas. Leituras fora da faixa e perda de sinal por mais de 15 segundos geram eventos locais identificados pelo `DEVICE_ID`; recuperação também é registrada. Valores nulos aparecem como `—` e não geram alerta para aquela grandeza. Alterar um limite só afeta novas amostras daquele ambiente. Estados salvos da versão anterior são migrados sem perder leituras e ajustes. SMS, e-mail e WhatsApp são prévia visual; nenhum aviso externo é enviado.
+Amostras e eventos reais são separados dos fictícios. O histórico guarda até 60 amostras por ESP32 (máximo 32 ambientes), e eventos são limitados a 500 na persistência. Cada ambiente tem nome, ícone e uma faixa de mínimo/máximo independente para as três métricas. Leituras fora da faixa e perda de sinal por mais de 15 segundos geram eventos locais identificados pelo `DEVICE_ID`; recuperação também é registrada. Valores nulos aparecem como `—` e não geram alerta para aquela grandeza. Alterar um limite só afeta novas amostras daquele ambiente. Estados salvos da versão anterior são migrados sem perder leituras e ajustes. Alertas reais novos acionam notificações locais e canais habilitados quando há destinatários e credenciais. Eventos fictícios não são enviados; reservas persistidas evitam reenvio automático após falha ou reinício.
 
 ## Verificar no aparelho
 
 ```sh
 am start -W -n br.eng.thsouza.winterhold/.MainActivity
 curl -i http://127.0.0.1:8790/healthz
-curl -i http://127.0.0.1:8790/api/v1/state
+curl -i -H "X-Winterhold-Key: CHAVE_WEB_DO_APK" http://127.0.0.1:8790/api/v1/state
 ```
 
 O workflow em `.github/workflows/android-demo.yml` executa build/testes e smoke tests em emuladores Android 11 e 15. Consulte [web/README.md](../web/README.md) para a prévia Node independente.
+
+## Configurar notificações
+
+1. Em **Alertas → Equipe**, cadastre os destinatários. Para SMS ou WhatsApp, informe número internacional E.164 (por exemplo, `+5511999999999`); para e-mail, informe endereço válido. Ajuste os canais e métricas de cada perfil. Perfis padrão não têm destinos reais.
+2. Em **Ajustes → Canais**, habilite os canais. Para SMS, toque em **Permitir envio de SMS** e use um aparelho com SIM ativo e serviço de SMS. Custos da operadora podem se aplicar. O status `submitted` é o resultado do `SmsManager` no aparelho, não a comprovação de recebimento pelo destinatário.
+3. Para testar o domínio `thsouza.eng.br`, configure no APK o servidor SMTP de sua conta, usuário, remetente do domínio e senha de aplicativo. O cliente usa TLS implícito na porta 465, valida o certificado do servidor e autentica com `AUTH LOGIN`. O segredo fica cifrado com Android Keystore; não entra no estado web, backup nem código. Não há credenciais pré-instaladas.
+4. Para WhatsApp, instale a [ponte Baileys no Termux](../bridge/whatsapp/README.md) no mesmo celular, pareie a sessão e forneça a ela o token exibido em **Ajustes → WhatsApp**. A ponte aceita conexões apenas pelo loopback `127.0.0.1:8791`.
+
+As tentativas são registradas antes do envio; `failed` e `uncertain` exigem conferência manual. O sistema não repete envios automaticamente. O app mostra o estado por evento e destinatário em **Alertas → Ver entregas**; a web apresenta o mesmo registro. Apenas alertas reais criados depois de iniciar a central entram no fluxo de envio.

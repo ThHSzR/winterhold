@@ -5,6 +5,23 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DemoStoreTest {
+    @Test fun favoritesAndRecipientsPersistWhileDemoResetsOnRestart() {
+        val original = DemoStore()
+        original.saveEnvironment(EnvironmentProfile("lab-01", "Laboratório", favorite = true))
+        val recipient = original.contacts.first().copy(phone = "+5511999999999", email = "alertas@thsouza.eng.br")
+        original.updateContact(recipient)
+        original.simulationRunning = true
+        original.liveMode = false
+        val restored = DemoStore().apply { restoreJson(original.savedJson()) }
+        assertTrue(restored.environments.getValue("lab-01").favorite)
+        assertEquals(recipient, restored.contacts.first())
+        assertFalse(restored.simulationRunning)
+        assertTrue(restored.liveMode)
+        assertThrows(IllegalArgumentException::class.java) {
+            restored.updateContact(recipient.copy(phone = "11999999999"))
+        }
+    }
+
     @Test fun profilesKeepIndependentMinimumMaximumAlertsAndHistory() {
         val store = DemoStore()
         store.saveEnvironment(EnvironmentProfile("lab-01", "Laboratório", "lab",
@@ -103,19 +120,20 @@ class DemoStoreTest {
         assertEquals(original.readings.toList(), restored.readings.toList())
         assertEquals(original.events.toList(), restored.events.toList())
         assertEquals(original.contacts.toList(), restored.contacts.toList())
-        assertEquals(original.savedJson(), restored.savedJson())
+        assertFalse(restored.simulationRunning)
+        assertFalse(restored.offlineDemo)
         restored.advance()
         assertEquals(original.readings.toList(), restored.readings.toList())
     }
 
-    @Test fun simulationContinuesFromSavedPhaseAndKeepsBoundedHistory() {
-        val original = DemoStore()
+    @Test fun demoResetsOffOnStartupAndKeepsBoundedHistory() {
+        val original = DemoStore().apply { simulationRunning = true }
         repeat(80) { original.advance() }
         val restored = DemoStore().apply { restoreJson(original.savedJson()) }
-        original.advance()
+        assertFalse(restored.simulationRunning)
+        assertTrue(restored.liveMode)
         restored.advance()
-        assertEquals(original.latest.temperature, restored.latest.temperature)
-        assertEquals(original.latest.voltage, restored.latest.voltage)
+        assertEquals(original.readings.toList(), restored.readings.toList())
         assertEquals(60, restored.readings.size)
     }
 

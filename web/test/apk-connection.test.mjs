@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import * as demo from '../demo.js';
 
-test('web conecta sem chave e retoma o APK após indisponibilidade sem usar dados da prévia', async () => {
+test('web conecta com chave e retoma o APK após indisponibilidade sem usar dados da prévia', async () => {
   const source = (await readFile(new URL('../app.js', import.meta.url), 'utf8'))
     .replace(/^import[\s\S]*?from '\.\/demo\.js';\s*/, '');
   const elements = new Map();
@@ -13,7 +13,7 @@ test('web conecta sem chave e retoma o APK após indisponibilidade sem usar dado
   let available = true;
   const snapshot = { ...demo.createDemoState(), running: false };
   const context = vm.createContext({
-    ...demo, AbortSignal, console,
+    ...demo, AbortSignal, console, sessionStorage: { getItem: () => 'test-key', setItem() {} },
     document: {
       querySelector(selector) {
         if (!elements.has(selector)) elements.set(selector, { hidden: true, innerHTML: '', textContent: '' });
@@ -36,7 +36,7 @@ test('web conecta sem chave e retoma o APK após indisponibilidade sem usar dado
   assert.equal(vm.runInContext('backend', context), 'android');
   assert.equal(vm.runInContext('state.running', context), false);
   assert.ok(requests.some(r => r.path === '/api/v1/state'));
-  assert.ok(requests.every(r => !r.options.headers?.['X-Winterhold-Key']));
+  assert.ok(requests.filter(r => r.path === '/api/v1/state').every(r => r.options.headers?.['X-Winterhold-Key'] === 'test-key'));
 
   available = false;
   timers[0]();

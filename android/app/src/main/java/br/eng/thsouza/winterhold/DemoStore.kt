@@ -55,7 +55,9 @@ data class DemoContact(
     val role: String,
     val metrics: Set<Metric>,
     val channels: Set<Channel>,
-    val active: Boolean = true
+    val active: Boolean = true,
+    val phone: String = "",
+    val email: String = ""
 )
 
 /** Stable ESP id plus the user-facing environment and its alert interval. */
@@ -68,7 +70,8 @@ data class EnvironmentProfile(
     val humidityMin: Float = 30f,
     val humidityMax: Float = 70f,
     val voltageMin: Float = 198f,
-    val voltageMax: Float = 242f
+    val voltageMax: Float = 242f,
+    val favorite: Boolean = false
 ) {
     companion object {
         val icons = listOf("snow", "classroom", "lab", "office", "server")
@@ -109,9 +112,9 @@ class DemoStore {
     var humidityLimit by mutableFloatStateOf(70f)
     var nominalVoltage by mutableFloatStateOf(220f)
     var voltageTolerance by mutableFloatStateOf(10f)
-    var simulationRunning by mutableStateOf(true)
+    var simulationRunning by mutableStateOf(false)
     var offlineDemo by mutableStateOf(false)
-    var liveMode by mutableStateOf(false)
+    var liveMode by mutableStateOf(true)
     var selectedDeviceId by mutableStateOf<String?>(null)
     var now by mutableStateOf(System.currentTimeMillis())
         private set
@@ -288,6 +291,8 @@ class DemoStore {
     }
 
     fun updateContact(contact: DemoContact) {
+        require(contact.phone.isEmpty() || contact.phone.matches(Regex("\\+[1-9][0-9]{7,14}"))) { "Telefone deve estar em formato internacional: +5511999999999" }
+        require(contact.email.isEmpty() || contact.email.matches(Regex("[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,190}\\.[A-Za-z]{2,20}"))) { "E-mail inválido" }
         val index = contacts.indexOfFirst { it.id == contact.id }
         if (index >= 0) contacts[index] = contact
     }
@@ -300,7 +305,7 @@ class DemoStore {
         }
 
     internal fun savedJson(): String = JSONObject()
-        .put("version", 3).put("tick", tick)
+        .put("version", 4).put("tick", tick)
         .put("readings", JSONArray(readings.map { JSONObject()
             .put("time", it.time).put("temperature", it.temperature)
             .put("humidity", it.humidity).put("voltage", it.voltage) }))
@@ -312,7 +317,8 @@ class DemoStore {
             .put("deviceId", profile.deviceId).put("name", profile.name).put("icon", profile.icon)
             .put("temperatureMin", profile.temperatureMin).put("temperatureMax", profile.temperatureMax)
             .put("humidityMin", profile.humidityMin).put("humidityMax", profile.humidityMax)
-            .put("voltageMin", profile.voltageMin).put("voltageMax", profile.voltageMax) }))
+            .put("voltageMin", profile.voltageMin).put("voltageMax", profile.voltageMax)
+            .put("favorite", profile.favorite) }))
         .put("liveMode", liveMode).put("selectedDeviceId", selectedDeviceId)
         .put("events", JSONArray(events.take(500).map { JSONObject()
             .put("id", it.id).put("time", it.time).put("metric", it.metric?.name ?: JSONObject.NULL)
@@ -323,7 +329,7 @@ class DemoStore {
             .put("id", it.id).put("name", it.name).put("role", it.role)
             .put("metrics", JSONArray(it.metrics.map { metric -> metric.name }))
             .put("channels", JSONArray(it.channels.map { channel -> channel.name }))
-            .put("active", it.active) }))
+            .put("active", it.active).put("phone", it.phone).put("email", it.email) }))
         .put("temperatureLimit", temperatureLimit.toDouble()).put("humidityLimit", humidityLimit.toDouble())
         .put("nominalVoltage", nominalVoltage.toDouble()).put("voltageTolerance", voltageTolerance.toDouble())
         .put("simulationRunning", simulationRunning).put("offlineDemo", offlineDemo)
@@ -334,7 +340,7 @@ class DemoStore {
     internal fun restoreJson(json: String) {
         val root = JSONObject(json)
         val version = root.getInt("version")
-        require(version in 1..3) { "Versão de estado desconhecida" }
+        require(version in 1..4) { "Versão de estado desconhecida" }
         val savedTick = root.getInt("tick").also { require(it >= 0) }
         fun optionalFloat(json: JSONObject, key: String): Float? = if (json.isNull(key)) null else
             json.getDouble(key).toFloat().also { require(it.isFinite()) }
@@ -367,7 +373,7 @@ class DemoStore {
             DemoContact(id = it.getString("id"), name = it.getString("name"), role = it.getString("role"),
                 metrics = it.getJSONArray("metrics").strings().map(Metric::valueOf).toSet(),
                 channels = it.getJSONArray("channels").strings().map(Channel::valueOf).toSet(),
-                active = it.getBoolean("active"))
+                active = it.getBoolean("active"), phone = it.optString("phone"), email = it.optString("email"))
         }
         val temperature = root.getDouble("temperatureLimit").toFloat().also { require(it in 20f..35f) }
         val humidity = root.getDouble("humidityLimit").toFloat().also { require(it in 40f..90f) }
@@ -377,7 +383,8 @@ class DemoStore {
             EnvironmentProfile(item.getString("deviceId"), item.getString("name"), item.getString("icon"),
                 item.getDouble("temperatureMin").toFloat(), item.getDouble("temperatureMax").toFloat(),
                 item.getDouble("humidityMin").toFloat(), item.getDouble("humidityMax").toFloat(),
-                item.getDouble("voltageMin").toFloat(), item.getDouble("voltageMax").toFloat()).validated()
+                item.getDouble("voltageMin").toFloat(), item.getDouble("voltageMax").toFloat(),
+                item.optBoolean("favorite", false)).validated()
         } else savedSeen.keys.map { id -> EnvironmentProfile(id, id, temperatureMax = temperature,
             humidityMax = humidity, voltageMin = nominal * (1 - tolerance / 100),
             voltageMax = nominal * (1 + tolerance / 100)).validated() }
@@ -391,7 +398,7 @@ class DemoStore {
         liveReadings.clear(); liveReadings.addAll(savedLive)
         lastSeen.clear(); lastSeen.putAll(savedSeen)
         environments.clear(); savedProfiles.forEach { environments[it.deviceId] = it }
-        liveMode = version >= 2 && root.getBoolean("liveMode")
+        liveMode = true
         selectedDeviceId = selected
         activeViolations.clear(); disconnected.clear()
         savedEvents.filter { !it.simulated && !it.resolved && it.metric != null }.forEach { event ->
@@ -408,7 +415,7 @@ class DemoStore {
         tick = savedTick
         temperatureLimit = temperature; humidityLimit = humidity
         nominalVoltage = nominal; voltageTolerance = tolerance
-        simulationRunning = running; offlineDemo = offline
+        simulationRunning = false; offlineDemo = false
     }
 
     private fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }

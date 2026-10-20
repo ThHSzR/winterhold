@@ -31,6 +31,8 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Place
+import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Thermostat
@@ -84,17 +86,21 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val Ink = Color(0xFF071923)
-private val Panel = Color(0xFF112A36)
-private val PanelLight = Color(0xFF183744)
-private val Ice = Color(0xFF78DCE8)
+private val Ink = Color(0xFF111820)
+private val Panel = Color(0xFF1D2830)
+private val PanelLight = Color(0xFF29404A)
+private val Ice = Color(0xFF7EDBD2)
 private val Muted = Color(0xFFA9C2C9)
-private val Amber = Color(0xFFFFCA79)
-private val Red = Color(0xFFFF8C88)
+private val Amber = Color(0xFFFFBC73)
+private val Red = Color(0xFFFF8297)
 
 private fun environmentIcon(code: String) = when (code) {
     "classroom" -> "🏫"; "lab" -> "🧪"; "office" -> "🏢"; "server" -> "🖥️"; else -> "❄️"
@@ -116,6 +122,7 @@ private val WinterholdColors = darkColorScheme(
 
 private enum class Screen(val label: String, val icon: ImageVector) {
     HOME("Início", Icons.Outlined.Home),
+    ENVIRONMENTS("Ambientes", Icons.Outlined.Place),
     HISTORY("Histórico", Icons.Outlined.History),
     ALERTS("Alertas", Icons.Outlined.Notifications),
     PEOPLE("Equipe", Icons.Outlined.Groups),
@@ -144,6 +151,7 @@ fun WinterholdApp(store: DemoStore = remember { DemoStore() }) {
                         }
                     },
                     actions = {
+                        if (screen == Screen.ALERTS) { TextButton(onClick = { screen = Screen.PEOPLE }) { Text("Equipe") } }
                         if (screen != Screen.SETTINGS) {
                             IconButton(onClick = { screen = Screen.SETTINGS }) {
                                 Icon(Icons.Outlined.Settings, contentDescription = "Abrir ajustes")
@@ -156,7 +164,7 @@ fun WinterholdApp(store: DemoStore = remember { DemoStore() }) {
             },
             bottomBar = {
                 NavigationBar(containerColor = Panel) {
-                    Screen.entries.filter { it != Screen.SETTINGS }.forEach { item ->
+                    listOf(Screen.HOME, Screen.ENVIRONMENTS, Screen.ALERTS, Screen.HISTORY).forEach { item ->
                         NavigationBarItem(
                             selected = screen == item,
                             onClick = { screen = item },
@@ -170,7 +178,8 @@ fun WinterholdApp(store: DemoStore = remember { DemoStore() }) {
             val modifier = Modifier.fillMaxSize().padding(padding)
             when (screen) {
                 Screen.HOME -> HomeScreen(store, modifier,
-                    onAlerts = { screen = Screen.ALERTS }, onHistory = { screen = Screen.HISTORY })
+                    onAlerts = { screen = Screen.ALERTS }, onHistory = { screen = Screen.HISTORY }, onEnvironments = { screen = Screen.ENVIRONMENTS })
+                Screen.ENVIRONMENTS -> EnvironmentsScreen(store, modifier)
                 Screen.HISTORY -> HistoryScreen(store, modifier)
                 Screen.ALERTS -> AlertsScreen(store, modifier)
                 Screen.PEOPLE -> PeopleScreen(store, modifier)
@@ -254,21 +263,21 @@ private fun MetricTile(metric: Metric, value: Float?, hint: String) {
 
 @Composable
 private fun HomeScreen(store: DemoStore, modifier: Modifier,
-                       onAlerts: () -> Unit, onHistory: () -> Unit) {
+                       onAlerts: () -> Unit, onHistory: () -> Unit, onEnvironments: () -> Unit) {
     val latest = store.latest
     LazyColumn(modifier, contentPadding = PaddingValues(18.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        item { DemoBanner(store) }
-        item { PageTitle("Visão geral", if (store.liveMode) store.selectedEnvironment?.let { "${environmentIcon(it.icon)} ${it.name} · ${it.deviceId}" } ?: "Aguardando ESP32" else "Sala 01 · Ambiente demonstrativo") }
+        item { PageTitle("Sua central", "ESP32 → celular → acesso web") }
         if (store.liveMode && store.environments.isNotEmpty()) item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(store.environments.values.sortedBy { it.name }, key = { it.deviceId }) { profile ->
+                items(store.environments.values.filter { it.favorite }.sortedBy { it.name }, key = { it.deviceId }) { profile ->
                     FilterChip(selected = store.selectedDeviceId == profile.deviceId,
                         onClick = { store.selectedDeviceId = profile.deviceId },
                         label = { Text("${environmentIcon(profile.icon)} ${profile.name}") })
                 }
             }
         }
+        item { SectionTitle("Ambiente em foco", "Gerenciar", onEnvironments) }
         item {
             PanelCard {
                 Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -312,8 +321,7 @@ private fun HomeScreen(store: DemoStore, modifier: Modifier,
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     SectionTitle("Central e dispositivo")
                     LinkRow("ESP32 → celular", if (store.liveMode) (if (store.deviceOnline) "MQTT ativo" else "Aguardando sinal") else "Rede local simulada")
-                    LinkRow("Armazenamento", "Histórico local persistido no aplicativo")
-                    LinkRow("Acesso remoto", "Web servida pelo celular")
+                    LinkRow("Acesso remoto", if (DemoCentral.active) "Web ativa no celular" else "Central parada")
                 }
             }
         }
@@ -441,12 +449,12 @@ private fun EventCard(event: AlertEvent, store: DemoStore, compact: Boolean = fa
                     if (event.resolved) Ice else tint)
                 Spacer(Modifier.weight(1f))
                 if (!compact) {
-                    TextButton(onClick = { showRoutes = true }) { Text("Ver roteamento") }
+                    TextButton(onClick = { showRoutes = true }) { Text("Ver entregas") }
                 }
             }
             if (!compact && !event.resolved) {
                 OutlinedButton(onClick = { store.resolveAlert(event.id) },
-                    modifier = Modifier.fillMaxWidth()) { Text("Marcar resolvido (demo)") }
+                    modifier = Modifier.fillMaxWidth()) { Text("Marcar resolvido") }
             }
         }
     }
@@ -454,13 +462,13 @@ private fun EventCard(event: AlertEvent, store: DemoStore, compact: Boolean = fa
         val routes = store.routesFor(event)
         AlertDialog(
             onDismissRequest = { showRoutes = false },
-            title = { Text("Roteamento simulado") },
+            title = { Text("Entregas") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Nenhuma mensagem foi enviada.", color = Muted)
+                    Text(if (event.simulated) "Evento simulado: sem envio." else "Tentativas por destinatário e canal:", color = Muted)
                     if (routes.isEmpty()) Text("Nenhum perfil ativo combina com este evento.")
                     routes.forEach { (contact, channels) ->
-                        Text("${contact.name}: ${channels.joinToString { it.label }}")
+                        Text("${contact.name}: ${channels.joinToString { "${it.label} (${DemoCentral.deliveryStatus(event.id, contact.id, it) ?: "aguardando configuração"})" }}")
                     }
                 }
             },
@@ -472,23 +480,14 @@ private fun EventCard(event: AlertEvent, store: DemoStore, compact: Boolean = fa
 @Composable
 private fun AlertsScreen(store: DemoStore, modifier: Modifier) {
     var filter by remember { mutableStateOf("Todos") }
-    var showSimulator by remember { mutableStateOf(false) }
-    val filtered = store.events.filter { when (filter) {
+    val filtered = store.events.filter { !it.simulated }.filter { when (filter) {
         "Abertos" -> !it.resolved
         "Resolvidos" -> it.resolved
         else -> true
     } }
     LazyColumn(modifier, contentPadding = PaddingValues(18.dp),
         verticalArrangement = Arrangement.spacedBy(15.dp)) {
-        item { DemoBanner(store) }
-        item { PageTitle("Alertas", "Eventos monitorados e simulação · nenhum envio externo") }
-        item {
-            Button(onClick = { showSimulator = true }, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Outlined.Add, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Simular um alerta")
-            }
-        }
+        item { PageTitle("Alertas", "Ocorrências reais e estado das entregas") }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("Todos", "Abertos", "Resolvidos").forEach { value ->
@@ -500,28 +499,7 @@ private fun AlertsScreen(store: DemoStore, modifier: Modifier) {
         items(filtered, key = { it.id }) { event -> EventCard(event, store) }
         if (filtered.isEmpty()) item { Text("Nenhum evento neste filtro.", color = Muted) }
     }
-    if (showSimulator) {
-        AlertDialog(
-            onDismissRequest = { showSimulator = false },
-            title = { Text("Criar evento de demonstração") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Escolha a variável. O evento ficará apenas na memória do celular.", color = Muted)
-                    Metric.entries.forEach { metric ->
-                        OutlinedButton(onClick = {
-                            store.simulateAlert(metric)
-                            showSimulator = false
-                        }, modifier = Modifier.fillMaxWidth()) {
-                            MetricIcon(metric)
-                            Spacer(Modifier.width(8.dp))
-                            Text(metric.label)
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showSimulator = false }) { Text("Cancelar") } }
-        )
-    }
+
 }
 
 @Composable
@@ -529,25 +507,23 @@ private fun PeopleScreen(store: DemoStore, modifier: Modifier) {
     var showAdd by remember { mutableStateOf(false) }
     LazyColumn(modifier, contentPadding = PaddingValues(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { DemoBanner(store) }
-        item { PageTitle("Equipe", "Perfis de alerta por variável e canal") }
+        item { PageTitle("Destinatários", "Endereços e filtros de entrega") }
         item {
             Button(onClick = { showAdd = true }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Outlined.Add, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Adicionar perfil demo")
+                Text("Adicionar destinatário")
             }
         }
         items(store.contacts, key = { it.id }) { contact -> ContactCard(contact, store) }
-        item { Text("Perfis locais fictícios. Nenhum número ou endereço real é solicitado nesta fase.",
-            color = Muted, fontSize = 11.sp) }
+
     }
     if (showAdd) {
         var name by remember { mutableStateOf("") }
         var role by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showAdd = false },
-            title = { Text("Novo perfil demo") },
+            title = { Text("Novo destinatário") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(value = name, onValueChange = { name = it },
@@ -594,6 +570,13 @@ private fun ContactCard(contact: DemoContact, store: DemoStore) {
             }
             if (expanded) {
                 HorizontalDivider()
+                var phone by remember(contact.id, contact.phone) { mutableStateOf(contact.phone) }
+                var email by remember(contact.id, contact.email) { mutableStateOf(contact.email) }
+                var destinationError by remember { mutableStateOf("") }
+                OutlinedTextField(phone, { phone = it }, label = { Text("Celular +55… (SMS / WhatsApp)") }, singleLine = true)
+                OutlinedTextField(email, { email = it }, label = { Text("E-mail") }, singleLine = true)
+                TextButton(onClick = { runCatching { store.updateContact(contact.copy(phone = phone.trim(), email = email.trim())) }.onSuccess { destinationError = "Salvo" }.onFailure { destinationError = it.message.orEmpty() } }) { Text("Salvar destinos") }
+                if (destinationError.isNotEmpty()) Text(destinationError, color = Amber, fontSize = 12.sp)
                 Text("VARIÁVEIS", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 Metric.entries.forEach { metric ->
                     ToggleRow(metric.label, metric in contact.metrics) { enabled ->
@@ -622,154 +605,110 @@ private fun ToggleRow(label: String, checked: Boolean, onChanged: (Boolean) -> U
 }
 
 @Composable
+private fun EnvironmentsScreen(store: DemoStore, modifier: Modifier) {
+    var editing by remember { mutableStateOf<EnvironmentProfile?>(null) }
+    var showEditor by remember { mutableStateOf(false) }
+    LazyColumn(modifier, contentPadding = PaddingValues(18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item { PageTitle("Ambientes", "Um ESP32 por ambiente · favoritos fixados no início") }
+        item { Button(onClick = { editing = null; showEditor = true }) {
+            Icon(Icons.Outlined.Add, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Adicionar ambiente")
+        } }
+        if (store.environments.isEmpty()) item { Text("Nenhum ambiente ainda. Cadastre o DEVICE_ID do firmware ou aguarde a primeira leitura.", color = Muted) }
+        items(store.environments.values.sortedWith(compareByDescending<EnvironmentProfile> { it.favorite }.thenBy { it.name }), key = { it.deviceId }) { profile ->
+            PanelCard { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(environmentIcon(profile.icon), fontSize = 26.sp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) { Text(profile.name, fontWeight = FontWeight.Bold); Text(profile.deviceId, color = Muted, fontSize = 12.sp) }
+                    IconButton(onClick = { store.saveEnvironment(profile.copy(favorite = !profile.favorite)) }) {
+                        Icon(Icons.Outlined.Star, contentDescription = if (profile.favorite) "Desafixar do início" else "Fixar no início",
+                            tint = if (profile.favorite) Amber else Muted)
+                    }
+                }
+                StatusPill(if (store.lastSeen[profile.deviceId]?.let { store.now - it in 0..15_000L } == true) "ONLINE" else "SEM SINAL",
+                    if (store.lastSeen[profile.deviceId]?.let { store.now - it in 0..15_000L } == true) Ice else Red)
+                Text("${profile.temperatureMin.toInt()}–${profile.temperatureMax.toInt()} °C  ·  ${profile.humidityMin.toInt()}–${profile.humidityMax.toInt()}%  ·  ${profile.voltageMin.toInt()}–${profile.voltageMax.toInt()} V", color = Muted, fontSize = 12.sp)
+                Row { TextButton(onClick = { store.selectedDeviceId = profile.deviceId }) { Text("Ver no início") }
+                    TextButton(onClick = { editing = profile; showEditor = true }) { Text("Editar limites") } }
+            } }
+        }
+    }
+    if (showEditor) EnvironmentEditor(editing, { showEditor = false }) { profile ->
+        store.saveEnvironment(profile); store.selectedDeviceId = profile.deviceId; showEditor = false
+    }
+}
+
+@Composable
 private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
     val context = LocalContext.current
-    var editingEnvironment by remember { mutableStateOf<EnvironmentProfile?>(null) }
-    var showEnvironmentEditor by remember { mutableStateOf(false) }
+    var smsGranted by remember { mutableStateOf(context.checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) }
+    val smsPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { smsGranted = it }
+    val deliverySettings = remember { DeliverySettings(context) }
+    var host by remember { mutableStateOf(deliverySettings.smtpHost) }
+    var user by remember { mutableStateOf(deliverySettings.smtpUser) }
+    var from by remember { mutableStateOf(deliverySettings.smtpFrom) }
+    var password by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { DemoCentral.refreshUrls() }
-    LazyColumn(modifier, contentPadding = PaddingValues(18.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item { DemoBanner(store) }
-        item { PageTitle("Ajustes", "Central no celular · MQTT e acesso web") }
-        item {
-            PanelCard {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SectionTitle("Acesso web pelo aplicativo")
-                    Text(DemoCentral.status, color = Ice, fontSize = 13.sp)
-                    Text("Abra o endereço pelo IP do celular em outro dispositivo da mesma rede local. A interface usa HTTP local sem login; use uma rede confiável.",
-                        color = Muted, fontSize = 12.sp)
-                    DemoCentral.urls.forEach { url ->
-                        SelectionContainer { Text(url, color = Ice, fontSize = 12.sp) }
-                        TextButton(onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("Winterhold web", url))
-                        }) { Text("Copiar endereço") }
-                    }
-                    Text(DemoCentral.persistenceStatus, color = Muted, fontSize = 12.sp)
-                    TextButton(onClick = {
-                        if (DemoCentral.active) CentralService.stop(context) else CentralService.start(context)
-                    }) { Text(if (DemoCentral.active) "Parar central" else "Retomar central") }
-                    TextButton(onClick = {
-                        CentralService.requestBatterySetup(context)
-                    }) { Text("Configurações de bateria") }
-                    Text("Na preparação inicial, permita operação sem otimização de bateria para a recuperação automática. A central continua com a tela fechada e retoma após reiniciar e desbloquear o celular. Parar a central desativa essa retomada até abri-la novamente.",
-                        color = Muted, fontSize = 11.sp)
-                }
+    LazyColumn(modifier, contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item { PageTitle("Ajustes", "Integrações da central Android") }
+        item { PanelCard { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SectionTitle("Web no celular")
+            Text(DemoCentral.status, color = Ice)
+            DemoCentral.urls.forEach { url -> SelectionContainer { Text(url, color = Amber) }
+                TextButton(onClick = { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                    .setPrimaryClip(ClipData.newPlainText("Winterhold web", url)) }) { Text("Copiar endereço") } }
+            Text("Chave de acesso web:", color = Muted, fontSize = 12.sp)
+            SelectionContainer { Text(DemoCentral.webSecret, color = Amber, fontSize = 12.sp) }
+            TextButton(onClick = { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                .setPrimaryClip(ClipData.newPlainText("Chave web", DemoCentral.webSecret)) }) { Text("Copiar chave web") }
+            Text("HTTP na rede local; use VPN ou HTTPS no acesso externo.", color = Muted, fontSize = 12.sp)
+            TextButton(onClick = { if (DemoCentral.active) CentralService.stop(context) else CentralService.start(context) }) {
+                Text(if (DemoCentral.active) "Parar central" else "Retomar central") }
+            TextButton(onClick = { CentralService.requestBatterySetup(context) }) { Text("Configurar bateria") }
+        } } }
+        item { PanelCard { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionTitle("ESP32 / MQTT")
+            Text(DemoCentral.mqttStatus, color = Ice)
+            Text("MQTT_HOST = IP deste celular · porta 1883 · usuário winterhold", color = Muted, fontSize = 12.sp)
+            SelectionContainer { Text(DemoCentral.mqttSecret, color = Amber, fontSize = 12.sp) }
+            TextButton(onClick = { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                .setPrimaryClip(ClipData.newPlainText("Chave MQTT", DemoCentral.mqttSecret)) }) { Text("Copiar chave MQTT") }
+        } } }
+        item { PanelCard { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionTitle("Canais de alerta")
+            Channel.entries.forEach { channel -> ToggleRow(channel.label, channel in store.enabledChannels) { enabled ->
+                if (enabled && channel !in store.enabledChannels) store.enabledChannels.add(channel)
+                if (!enabled) store.enabledChannels.remove(channel)
+            } }
+            if (!smsGranted) OutlinedButton(onClick = { smsPermission.launch(Manifest.permission.SEND_SMS) }) {
+                Text("Permitir envio de SMS neste aparelho")
             }
-        }
-        item {
-            PanelCard {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SectionTitle("ESP32 / MQTT")
-                    ToggleRow("Mostrar leituras reais", store.liveMode) { store.liveMode = it }
-                    Text(DemoCentral.mqttStatus, color = Ice, fontSize = 13.sp)
-                    Text("No firmware: MQTT_HOST = IP do celular, MQTT_PORT = 1883 e MQTT_USER = winterhold.", color = Muted, fontSize = 12.sp)
-                    Text("Chave MQTT deste celular (não aparece na web):", color = Muted, fontSize = 12.sp)
-                    SelectionContainer { Text(DemoCentral.mqttSecret, color = Ice, fontSize = 12.sp) }
-                    TextButton(onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Winterhold MQTT", DemoCentral.mqttSecret))
-                    }) { Text("Copiar chave MQTT") }
-                    Text("Cada ID MQTT corresponde a um ambiente. Cadastre antes da primeira leitura ou personalize um ESP detectado.", color = Muted, fontSize = 12.sp)
-                    OutlinedButton(onClick = { editingEnvironment = null; showEnvironmentEditor = true }) {
-                        Icon(Icons.Outlined.Add, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Adicionar ambiente")
-                    }
-                    if (store.environments.isEmpty()) Text("Nenhum ambiente cadastrado ainda.", color = Muted, fontSize = 12.sp)
-                    store.environments.values.sortedBy { it.name }.forEach { profile ->
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            FilterChip(selected = store.selectedDeviceId == profile.deviceId,
-                                onClick = { store.selectedDeviceId = profile.deviceId; store.liveMode = true },
-                                label = { Text("${environmentIcon(profile.icon)} ${profile.name}") })
-                            Spacer(Modifier.weight(1f))
-                            TextButton(onClick = { editingEnvironment = profile; showEnvironmentEditor = true }) { Text("Editar") }
-                        }
-                        Text("${profile.deviceId} · ${if (store.lastSeen[profile.deviceId]?.let { store.now - it in 0..15_000L } == true) "online" else "aguardando ESP"} · " +
-                            "${profile.temperatureMin.toInt()}–${profile.temperatureMax.toInt()} °C · ${profile.humidityMin.toInt()}–${profile.humidityMax.toInt()}% · ${profile.voltageMin.toInt()}–${profile.voltageMax.toInt()} V",
-                            color = Muted, fontSize = 11.sp)
-                    }
-                }
-            }
-        }
-        item {
-            PanelCard {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SectionTitle("Simulação")
-                    ToggleRow("Gerar novas leituras", store.simulationRunning) {
-                        store.simulationRunning = it
-                    }
-                    ToggleRow("Simular ESP32 desconectado", store.offlineDemo) {
-                        if (it != store.offlineDemo) store.simulateDisconnection()
-                    }
-                    Text("As leituras são geradas a cada 5 segundos. Pausar e desconectar não altera sensores reais.",
-                        color = Muted, fontSize = 12.sp)
-                }
-            }
-        }
-        item { SectionTitle("Limiares do modo demo") }
-        item {
-            PanelCard {
-                Column {
-                    LimitSlider("Temperatura máxima", store.temperatureLimit, "°C", 20f..35f) {
-                        store.temperatureLimit = it
-                    }
-                    LimitSlider("Umidade máxima", store.humidityLimit, "%", 40f..90f) {
-                        store.humidityLimit = it
-                    }
-                    LimitSlider("Tensão nominal", store.nominalVoltage, "V", 100f..250f) {
-                        store.nominalVoltage = it
-                    }
-                    LimitSlider("Tolerância de tensão", store.voltageTolerance, "%", 2f..20f) {
-                        store.voltageTolerance = it
-                    }
-                    val low = store.nominalVoltage * (1 - store.voltageTolerance / 100)
-                    val high = store.nominalVoltage * (1 + store.voltageTolerance / 100)
-                    Text("Faixa demo: ${low.toInt()}–${high.toInt()} V. Os alertas reais usam os limites individuais de cada ambiente.",
-                        color = Muted, fontSize = 12.sp)
-                }
-            }
-        }
-        item { SectionTitle("Canais no roteamento") }
-        item {
-            PanelCard {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Channel.entries.forEach { channel ->
-                        ToggleRow(channel.label, channel in store.enabledChannels) { enabled ->
-                            if (enabled && channel !in store.enabledChannels) store.enabledChannels.add(channel)
-                            if (!enabled) store.enabledChannels.remove(channel)
-                        }
-                    }
-                    Text("Estas chaves mudam apenas a prévia de roteamento. SMS, e-mail e WhatsApp não são enviados.",
-                        color = Muted, fontSize = 12.sp)
-                }
-            }
-        }
-        item {
-            PanelCard {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SectionTitle("Integrações")
-                    LinkRow("ESP32", "MQTT recebido pelo celular")
-                    LinkRow("Persistência", "Arquivo local no celular")
-                    LinkRow("SMS", "Compatibilidade a validar")
-                    LinkRow("E-mail", "Provedor autenticado")
-                    LinkRow("WhatsApp", "Link assistido ou API oficial")
-                    Text("SMS, e-mail e WhatsApp permanecem como prévia de roteamento; não há disparo externo.",
-                        color = Amber, fontSize = 12.sp)
-                }
-            }
-        }
-        item { Text("Winterhold · 0.4 · ambientes e medições persistidos no celular.",
-            color = Muted, fontSize = 11.sp) }
+            Text("Configure os destinatários em Equipe. Alertas simulados nunca são enviados.", color = Muted, fontSize = 12.sp)
+        } } }
+        item { PanelCard { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionTitle("E-mail · SMTP TLS (465)")
+            OutlinedTextField(host, { host = it }, label = { Text("Servidor SMTP") }, singleLine = true)
+            OutlinedTextField(user, { user = it }, label = { Text("Usuário") }, singleLine = true)
+            OutlinedTextField(from, { from = it }, label = { Text("Remetente @thsouza.eng.br") }, singleLine = true)
+            OutlinedTextField(password, { password = it }, label = { Text("Senha / senha de aplicativo (deixe vazio para manter)") }, singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+            Button(onClick = { runCatching {
+                deliverySettings.smtpHost = host.trim(); deliverySettings.smtpUser = user.trim()
+                deliverySettings.smtpFrom = from.trim(); if (password.isNotBlank()) deliverySettings.smtpPassword = password
+            }.onSuccess { password = ""; message = "SMTP salvo no celular" }.onFailure { message = it.message.orEmpty() } }) { Text("Salvar SMTP") }
+            if (message.isNotEmpty()) Text(message, color = Amber)
+        } } }
+        item { PanelCard { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionTitle("WhatsApp · Baileys no Termux")
+            Text("Instale a ponte Winterhold separada do bom-dia, pareie por QR e configure o mesmo token local.", color = Muted, fontSize = 12.sp)
+            SelectionContainer { Text(deliverySettings.bridgeToken, color = Amber, fontSize = 11.sp) }
+            TextButton(onClick = { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                .setPrimaryClip(ClipData.newPlainText("Token ponte WhatsApp", deliverySettings.bridgeToken)) }) { Text("Copiar token da ponte") }
+        } } }
+        item { Text("Destinatários: abra Alertas → Equipe.", color = Muted, fontSize = 12.sp) }
     }
-    if (showEnvironmentEditor) EnvironmentEditor(editingEnvironment,
-        onDismiss = { showEnvironmentEditor = false },
-        onSave = { profile ->
-            store.saveEnvironment(profile)
-            store.selectedDeviceId = profile.deviceId
-            store.liveMode = true
-            showEnvironmentEditor = false
-        })
 }
 
 @Composable

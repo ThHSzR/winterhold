@@ -23,6 +23,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
+import java.security.MessageDigest
 import java.util.Collections
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
@@ -41,7 +42,12 @@ object DemoCentral {
         private set
     var mqttSecret by mutableStateOf("")
         private set
+    var webSecret by mutableStateOf("")
+        private set
     private var persistence: DemoPersistence? = null
+    private var delivery: AlertDelivery? = null
+    fun deliveryStatus(eventId: String, contactId: String, channel: Channel): String? =
+        delivery?.status(eventId, contactId, channel)
     private var observer: ObserverHandle? = null
     private var lastSaved: String? = null
     var persistenceStatus by mutableStateOf("Carregando dados locais")
@@ -61,6 +67,8 @@ object DemoCentral {
         override fun run() {
             store.advance()
             store.heartbeat()
+            delivery?.dispatch(store, store.events)
+            delivery?.refreshWhatsApp(store)
             refreshUrls()
             save()
             main.postDelayed(this, 5_000)
@@ -72,12 +80,17 @@ object DemoCentral {
         persistence = DemoPersistence(context.applicationContext).also {
             persistenceStatus = it.restore(store)
         }
+        delivery = AlertDelivery(context.applicationContext).also { it.prime(store) }
         val preferences = context.applicationContext.getSharedPreferences("mqtt", Context.MODE_PRIVATE)
         mqttSecret = preferences.getString("secret", null) ?: ByteArray(18).also {
             SecureRandom().nextBytes(it)
         }.joinToString("") { "%02x".format(it) }.also {
             preferences.edit().putString("secret", it).commit()
         }
+        val webPreferences = context.applicationContext.getSharedPreferences("web_access", Context.MODE_PRIVATE)
+        webSecret = webPreferences.getString("secret", null) ?: ByteArray(18).also {
+            SecureRandom().nextBytes(it)
+        }.joinToString("") { "%02x".format(it) }.also { webPreferences.edit().putString("secret", it).commit() }
         // Persistence belongs to the app state, even when the user stops the web service.
         observer = Snapshot.registerGlobalWriteObserver {
             main.removeCallbacks(saveChanges)
@@ -120,7 +133,7 @@ object DemoCentral {
     private fun startMqtt() {
         try {
             mqtt = MqttIngress(mqttSecret, { reading ->
-                main.post { runCatching { store.ingest(reading); save() } }
+                main.post { runCatching { store.ingest(reading); delivery?.dispatch(store, store.events); save() } }
             }).also { it.start() }
             mqttStatus = "Recebendo MQTT na porta 1883"
         } catch (error: Exception) {
@@ -218,6 +231,9 @@ internal class DemoHttpServer(
                 return respond(socket, 200, "application/json", """{"status":"ok","mode":"android-central","service":"winterhold-apk"}""".toByteArray())
             }
             if (route == "/api/v1/state" || route == "/api/v1/action") {
+                val supplied = headers["x-winterhold-key"].orEmpty().toByteArray(StandardCharsets.UTF_8)
+                if (!MessageDigest.isEqual(supplied, DemoCentral.webSecret.toByteArray(StandardCharsets.UTF_8)))
+                    return respond(socket, 401, "application/json", """{"error":"Chave web inválida"}""".toByteArray())
                 try {
                     val json = when {
                         route == "/api/v1/state" && method == "GET" -> onMain { snapshot() }
@@ -315,6 +331,7 @@ internal class DemoHttpServer(
                 .put("deviceId", it.deviceId ?: JSONObject.NULL) }))
             .put("contacts", JSONArray(store.contacts.map { JSONObject()
                 .put("id", it.id).put("name", it.name).put("role", it.role)
+                .put("phone", it.phone).put("email", it.email)
                 .put("metrics", JSONArray(it.metrics.map { m -> m.name.lowercase(Locale.ROOT) }))
                 .put("channels", JSONArray(it.channels.map { c -> c.name.lowercase(Locale.ROOT) }))
                 .put("active", it.active) }))
@@ -325,8 +342,11 @@ internal class DemoHttpServer(
             .put("running", store.simulationRunning).put("offline", store.offlineDemo)
             .put("mode", if (store.liveMode) "esp" else "demo")
             .put("selectedDeviceId", store.selectedDeviceId ?: JSONObject.NULL)
+            .put("deliveries", JSONArray(store.events.flatMap { event -> store.contacts.flatMap { contact ->
+                Channel.entries.mapNotNull { channel -> deliveryStatus(event, contact, channel) }
+            } }.take(100)))
             .put("devices", JSONArray(store.environments.values.sortedBy { it.name }.map { profile -> JSONObject()
-                .put("id", profile.deviceId).put("name", profile.name).put("icon", profile.icon)
+                .put("id", profile.deviceId).put("name", profile.name).put("icon", profile.icon).put("favorite", profile.favorite)
                 .put("lastSeen", store.lastSeen[profile.deviceId] ?: JSONObject.NULL)
                 .put("online", store.lastSeen[profile.deviceId]?.let { store.now - it in 0..15_000L } ?: false)
                 .put("limits", JSONObject()
@@ -357,7 +377,13 @@ internal class DemoHttpServer(
                     icon = profile.optString("icon"),
                     temperatureMin = number("temperatureMin"), temperatureMax = number("temperatureMax"),
                     humidityMin = number("humidityMin"), humidityMax = number("humidityMax"),
-                    voltageMin = number("voltageMin"), voltageMax = number("voltageMax")))
+                    voltageMin = number("voltageMin"), voltageMax = number("voltageMax"),
+                    favorite = profile.optBoolean("favorite", store.environments[profile.optString("id")]?.favorite ?: false)))
+            }
+            "favoriteEnvironment" -> {
+                val id = action.getString("id")
+                val old = store.environments[id] ?: throw IllegalArgumentException("Ambiente desconhecido")
+                store.saveEnvironment(old.copy(favorite = action.getBoolean("value")))
             }
             "simulateAlert" -> store.simulateAlert(metric(action.getString("metric")))
             "resolveAlert" -> store.resolveAlert(action.getString("id"))
@@ -369,6 +395,11 @@ internal class DemoHttpServer(
             "contactActive" -> {
                 val old = contact(action.getString("id"))
                 store.updateContact(old.copy(active = action.getBoolean("value")))
+            }
+            "contactDestination" -> {
+                val old = contact(action.getString("id"))
+                store.updateContact(old.copy(phone = action.optString("phone").trim(),
+                    email = action.optString("email").trim()))
             }
             "contactItem" -> {
                 val old = contact(action.getString("id"))
@@ -413,4 +444,8 @@ internal class DemoHttpServer(
         ?: throw IllegalArgumentException("Canal inválido")
     private fun contact(id: String) = store.contacts.firstOrNull { it.id == id }
         ?: throw IllegalArgumentException("Perfil não encontrado")
+    private fun deliveryStatus(event: AlertEvent, contact: DemoContact, channel: Channel): JSONObject? =
+        DemoCentral.deliveryStatus(event.id, contact.id, channel)?.let { status -> JSONObject()
+            .put("eventId", event.id).put("contactId", contact.id)
+            .put("channel", channel.name.lowercase(Locale.ROOT)).put("status", status) }
 }

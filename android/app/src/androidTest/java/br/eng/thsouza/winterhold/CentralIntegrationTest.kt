@@ -21,6 +21,7 @@ class CentralIntegrationTest {
     private fun request(path: String, action: String? = null): Pair<Int, String> {
         val connection = URL("http://127.0.0.1:8790$path").openConnection() as HttpURLConnection
         try {
+            connection.setRequestProperty("X-Winterhold-Key", DemoCentral.webSecret)
             connection.connectTimeout = 2_000
             connection.readTimeout = 4_000
             if (action != null) {
@@ -73,7 +74,7 @@ class CentralIntegrationTest {
         }
     }
 
-    @Test fun servesDirectIpWithoutKeyPersistsAndSurvivesClosingActivity() {
+    @Test fun servesDirectIpWithKeyPersistsAndSurvivesClosingActivity() {
         // Match the one-time preparation offered by the app, without changing other apps.
         instrumentation.uiAutomation.executeShellCommand(
             "dumpsys deviceidle whitelist +${context.packageName}"

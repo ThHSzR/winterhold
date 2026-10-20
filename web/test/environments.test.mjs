@@ -10,7 +10,7 @@ test('web shows separate environment identity and bounds without injecting names
     .replace(/\nboot\(\);\s*$/, '');
   const elements = new Map();
   const context = vm.createContext({
-    ...demo,
+    ...demo, sessionStorage: { getItem: () => 'key' },
     document: {
       querySelector(selector) {
         if (!elements.has(selector)) elements.set(selector, { innerHTML: '', hidden: true });
@@ -28,11 +28,11 @@ test('web shows separate environment identity and bounds without injecting names
       limits: { temperatureMin: 19, temperatureMax: 24, humidityMin: 35, humidityMax: 65, voltageMin: 205, voltageMax: 235 } },
       { id: 'sala-02', name: 'Sala 02', icon: 'classroom', online: false,
       limits: { temperatureMin: 18, temperatureMax: 30, humidityMin: 30, humidityMax: 70, voltageMin: 198, voltageMax: 242 } }];
-    ({ overview: overview(), settings: settingsPage() });`, context);
+    ({ overview: overview(), environments: environmentsPage() });`, context);
   assert.match(result.overview, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(result.overview, /<script>alert\(1\)<\/script>/);
   assert.match(result.overview, /19,0–24,0 °C/);
-  assert.match(result.settings, /205,0–235,0 V/);
-  assert.match(result.settings, /Sala 02/);
-  assert.match(result.settings, /data-action="edit-environment"/);
+  assert.match(result.environments, /205,0–235,0 V/);
+  assert.match(result.environments, /Sala 02/);
+  assert.match(result.environments, /data-action="edit-environment"/);
 });

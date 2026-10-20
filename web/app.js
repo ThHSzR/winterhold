@@ -5,14 +5,16 @@ import {
 
 const state = createDemoState();
 let backend = 'loading';
+let webKey = sessionStorage.getItem('winterhold-web-key') || '';
 const pages = {
   inicio: ['Visão geral', 'home'],
+  ambientes: ['Ambientes', 'database'],
   historico: ['Histórico', 'history'],
   alertas: ['Alertas', 'bell'],
   equipe: ['Equipe', 'users'],
   ajustes: ['Ajustes', 'settings']
 };
-const mainPages = ['inicio', 'historico', 'alertas', 'equipe'];
+const mainPages = ['inicio', 'ambientes', 'alertas', 'historico'];
 let metric = 'temperature';
 let alertFilter = 'all';
 let dialog = null;
@@ -21,6 +23,11 @@ const content = document.querySelector('#app-content');
 const dialogRoot = document.querySelector('#dialog-root');
 const connectionBanner = document.querySelector('#connection-banner');
 
+function showUnlock() {
+  backend = 'locked';
+  connectionBanner.hidden = true;
+  content.innerHTML = `<section class="card unlock-card"><span class="eyebrow">CENTRAL ANDROID</span><h1>Acessar Winterhold</h1><p>Copie a chave de acesso web exibida nos Ajustes do aplicativo.</p><form id="unlock-form"><label class="form-field">Chave web<input name="key" type="password" autocomplete="off" required></label><button class="btn" type="submit">Entrar</button></form></section>`;
+}
 function connectionError(message) {
   backend = 'error';
   connectionBanner.hidden = false;
@@ -30,8 +37,9 @@ function connectionError(message) {
 async function refreshFromApk() {
   try {
     const response = await fetch('/api/v1/state', {
-      cache: 'no-store', signal: AbortSignal.timeout(8_000)
+      headers: { 'X-Winterhold-Key': webKey }, cache: 'no-store', signal: AbortSignal.timeout(8_000)
     });
+    if (response.status === 401) { showUnlock(); return; }
     if (!response.ok) throw new Error(`Central indisponível (${response.status})`);
     Object.assign(state, await response.json());
     backend = 'android';
@@ -46,10 +54,11 @@ async function sendAction(payload, previewAction) {
     try {
       const response = await fetch('/api/v1/action', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Winterhold-Key': webKey },
         signal: AbortSignal.timeout(8_000),
         body: JSON.stringify(payload)
       });
+      if (response.status === 401) { showUnlock(); return false; }
       if (!response.ok) throw new Error((await response.json()).error || `Erro ${response.status}`);
       Object.assign(state, await response.json());
       connectionBanner.hidden = true;
@@ -70,7 +79,7 @@ async function boot() {
     if (!response.ok) throw new Error('Servidor indisponível');
     const health = await response.json();
     if (health.mode === 'android-central' || health.mode === 'android-demo') {
-      document.querySelector('.page-footer').textContent = 'Winterhold · Central no APK. Leituras ESP32 ou demo; saúde do celular medida no Android.';
+      document.querySelector('.page-footer').textContent = 'Winterhold · Central no APK. Saúde do celular medida no Android.';
       await refreshFromApk();
     } else if (health.mode === 'demo') {
       backend = 'preview';
@@ -111,7 +120,7 @@ const environmentName = id => {
   const profile = state.devices?.find(device => device.id === id);
   return profile ? `${environmentIcons[profile.icon] || '❄️'} ${profile.name}` : id;
 };
-const environmentChoices = () => backend === 'android' && state.mode === 'esp' ? `<div class="chip-row environment-choices" role="group" aria-label="Selecionar ambiente">${(state.devices || []).map(device =>
+const environmentChoices = () => backend === 'android' && state.mode === 'esp' ? `<div class="chip-row environment-choices" role="group" aria-label="Selecionar ambiente">${(state.devices || []).filter(device => device.favorite).map(device =>
   `<button class="chip ${state.selectedDeviceId === device.id ? 'active' : ''}" data-action="selected-device" data-id="${escapeHtml(device.id)}" aria-pressed="${state.selectedDeviceId === device.id}">${escapeHtml(environmentName(device.id))}${device.online ? ' · online' : ''}</button>`).join('')}</div>` : '';
 const time = value => new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(value);
 const dateTime = value => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(value);
@@ -158,7 +167,7 @@ function overview() {
     ${eventIcon(item)}<div class="event-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></div>
     <span class="event-time">${time(item.time)}</span></div>`).join('');
   const device = state.deviceHealth;
-  return `${pageHead('PAINEL / AMBIENTE', 'Visão geral', live ? `${escapeHtml(selected ? environmentName(selected.id) : 'Aguardando ESP32')} · ${escapeHtml(state.selectedDeviceId || '')}` : 'Sala 01 · Ambiente demonstrativo · leituras fictícias')}
+  return `${pageHead('PAINEL / AMBIENTE', 'Sua central', live ? `${escapeHtml(selected ? environmentName(selected.id) : 'Aguardando ESP32')} · ${escapeHtml(state.selectedDeviceId || '')}` : 'Sala 01 · Ambiente demonstrativo · leituras fictícias')}
     ${environmentChoices()}
     <div class="overview-grid">
       <section class="card hero" aria-label="Temperatura atual demonstrativa">
@@ -173,6 +182,7 @@ function overview() {
         ${metricCard('voltage', latest.voltage, live ? `${decimal(selected?.limits.voltageMin)}–${decimal(selected?.limits.voltageMax)} V` : `Nominal ${state.limits.nominalVoltage} V`)}
       </div>
     </div>
+    <div class="home-quick"><a class="btn secondary" href="#ambientes">Gerenciar ambientes →</a><a class="btn ghost" href="#alertas">Alertas abertos: ${state.events.filter(item => !item.resolved && !item.simulated).length}</a></div>
     <div class="below-grid">
       <div>${section('Central e dispositivo')}
         <section class="card card-pad status-list">
@@ -191,7 +201,7 @@ function overview() {
       <div><span>Armazenamento</span><strong>${device.storage == null ? '—' : `${device.storage}%`}</strong></div>
       <div><span>Tempo ligado</span><strong>${escapeHtml(device.uptime)}</strong></div>
     </section>
-    <p class="muted-note">${live ? 'Leituras MQTT e eventos são processados no APK.' : 'A prévia usa dados fictícios.'} Saúde do celular medida pelo Android ao acessar o APK. SMS, e-mail e WhatsApp não enviam mensagens.</p>`;
+    <p class="muted-note">${live ? 'Leituras MQTT e eventos são processados no APK.' : 'A prévia usa dados fictícios.'} Saúde do celular medida pelo Android ao acessar o APK.</p>`;
 }
 function metricCard(key, value, hint) {
   const iconName = key === 'humidity' ? 'drop' : 'bolt';
@@ -222,19 +232,19 @@ function alertCard(item) {
   return `<article class="card alert-card ${item.severity}">
     <div class="alert-top">${eventIcon(item)}<div class="event-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></div></div>
     <div class="alert-meta">${pill(label, tone)}<span class="tag">${item.simulated ? 'DEMO' : escapeHtml(environmentName(item.deviceId))}</span><span class="time">${dateTime(item.time)}</span></div>
-    <div class="alert-actions"><button class="btn secondary small" data-action="routes" data-id="${item.id}">Ver roteamento</button>
+    <div class="alert-actions"><button class="btn secondary small" data-action="routes" data-id="${item.id}">Ver entregas</button>
     ${item.resolved ? '' : `<button class="btn ghost small" data-action="resolve" data-id="${item.id}">Marcar resolvido</button>`}</div></article>`;
 }
 function alertsPage() {
   const filters = [['all', 'Todos'], ['open', 'Abertos'], ['resolved', 'Resolvidos']]
     .map(([key, label]) => `<button class="chip ${alertFilter === key ? 'active' : ''}" data-action="alert-filter" data-filter="${key}" aria-pressed="${alertFilter === key}">${label}</button>`).join('');
-  const shown = state.events.filter(item => alertFilter === 'all' || (alertFilter === 'open' ? !item.resolved : item.resolved));
-  return `${pageHead('EVENTOS / NOTIFICAÇÕES', 'Alertas', 'Eventos e rotas simulados; nenhum canal envia mensagens',
-    `<button class="btn" data-action="simulate">${icon('plus')} Simular alerta</button>`)}
+  const shown = state.events.filter(item => backend !== 'android' || !item.simulated).filter(item => alertFilter === 'all' || (alertFilter === 'open' ? !item.resolved : item.resolved));
+  return `${pageHead('EVENTOS / NOTIFICAÇÕES', 'Alertas', 'Ocorrências e estados de entrega',
+    `<a class="btn secondary" href="#equipe">Destinatários →</a>`)}
     <div class="chip-row" role="group" aria-label="Filtrar alertas">${filters}</div>
     ${section(`Eventos (${shown.length})`)}
     <div class="alert-list">${shown.length ? shown.map(alertCard).join('') : '<div class="card empty">Nenhum evento neste filtro.</div>'}</div>
-    <p class="muted-note">SMS, e-mail e WhatsApp aqui representam somente a decisão de roteamento. A entrega real será implementada e validada em outra fase.</p>`;
+    <p class="muted-note">Eventos simulados não disparam mensagens. A entrega depende dos destinos e credenciais configurados no APK.</p>`;
 }
 function peoplePage() {
   const cards = state.contacts.map(contact => `<article class="card contact-card">
@@ -243,71 +253,46 @@ function peoplePage() {
       <label class="toggle"><span class="sr-only">Perfil ativo</span><input type="checkbox" data-action="contact-active" data-id="${contact.id}" ${contact.active ? 'checked' : ''} aria-label="Ativar perfil ${escapeHtml(contact.name)}"></label></div>
     <div class="contact-tags">${contact.metrics.map(m => `<span class="tag">${METRICS[m].label}</span>`).join('') || '<span class="tag">Sem variável</span>'}</div>
     <div class="contact-bottom"><span>${contact.channels.map(c => CHANNELS[c]).join(' · ') || 'Sem canal'}</span>
-      <button class="subtle-link" data-action="edit-contact" data-id="${contact.id}">Editar filtros</button></div></article>`).join('');
+      <button class="subtle-link" data-action="edit-contact" data-id="${contact.id}">Editar destinos e filtros</button></div></article>`).join('');
   return `${pageHead('DESTINATÁRIOS / PERFIS', 'Equipe', 'Classes de serviço por variável e canal',
     `<button class="btn" data-action="add-contact">${icon('plus')} Novo perfil</button>`)}
     <div class="people-list">${cards}</div>
-    <p class="muted-note">Perfis fictícios sem números ou endereços. Alterações valem apenas enquanto esta página permanece aberta.</p>`;
+    <p class="muted-note">Configure os destinos e filtros; eventos simulados nunca geram envios.</p>`;
 }
 function rangeRow(key, label, min, max, unit) {
   return `<div class="range-row"><div class="flex-between"><span>${label}</span><strong id="limit-${key}">${state.limits[key]} ${unit}</strong></div>
     <input type="range" min="${min}" max="${max}" step="1" value="${state.limits[key]}" data-action="limit" data-key="${key}" aria-label="${label}"></div>`;
 }
-function settingsPage() {
-  const live = backend === 'android' && state.mode === 'esp';
-  const low = Math.round(state.limits.nominalVoltage * (1 - state.limits.tolerance / 100));
-  const high = Math.round(state.limits.nominalVoltage * (1 + state.limits.tolerance / 100));
-  const channels = Object.entries(CHANNELS).map(([key, label]) =>
-    `<div class="settings-line"><span>${label}</span><label class="toggle"><input type="checkbox" data-action="channel" data-channel="${key}" ${state.enabledChannels.includes(key) ? 'checked' : ''} aria-label="Incluir ${label} na prévia de roteamento"></label></div>`).join('');
-  const integrations = [
-    ['radio', 'ESP32 / MQTT', 'Celular recebe publicações MQTT e processa alertas locais.'],
-    ['database', 'Histórico / API', 'Arquivo local no celular e API para a interface web.'],
-    ['message', 'SMS', 'Envio após validar modem, permissões e entrega.'],
-    ['mail', 'E-mail', 'Provedor autenticado, fila e confirmação.'],
-    ['message', 'WhatsApp', 'Link assistido ou integração oficial após validação.']
-  ].map(([symbol, title, detail]) =>
-    `<article class="card integration-card"><span class="metric-icon">${icon(symbol)}</span><h3>${title}</h3><p>${detail}</p><span class="tag">PLANEJADO</span></article>`).join('');
-  return `${pageHead('CENTRAL / CONFIGURAÇÃO', 'Ajustes', 'Controles da central no celular')}
-    ${backend === 'android' ? `<section class="card settings-card"><h2>ESP32 / MQTT</h2>
-      <div class="settings-line"><span>Mostrar leituras reais</span><label class="toggle"><input type="checkbox" data-action="mode" ${live ? 'checked' : ''} aria-label="Mostrar leituras reais"></label></div>
-      <p>MQTT na porta 1883: ${state.mqttAvailable ? 'ativo' : 'indisponível'}. Configure o IP do celular e a chave exibida apenas nos ajustes do APK.</p>
-      <div class="flex-between"><h2>Ambientes</h2><button class="btn secondary small" data-action="add-environment">+ Adicionar</button></div>
-      <p>Um DEVICE_ID por ESP32. Cadastre antes da primeira leitura ou personalize um dispositivo detectado.</p>
-      <div class="environment-list">${(state.devices || []).map(device => `<article class="environment-card">
-        <span class="environment-avatar" aria-hidden="true">${environmentIcons[device.icon] || '❄️'}</span>
-        <div class="environment-copy"><strong>${escapeHtml(device.name)}</strong><small>${escapeHtml(device.id)} · ${device.online ? 'online' : 'aguardando ESP'}</small>
+function environmentsPage() {
+  const devices = [...(state.devices || [])].sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || a.name.localeCompare(b.name));
+  return `${pageHead('ESP32 / ESPAÇOS', 'Ambientes', 'Um ESP32 por espaço · personalize limites e fixe favoritos',
+    backend === 'android' ? '<button class="btn" data-action="add-environment">+ Adicionar</button>' : '')}
+    <div class="environment-list">${devices.map(device => `<article class="card environment-card">
+      <span class="environment-avatar" aria-hidden="true">${environmentIcons[device.icon] || '❄️'}</span>
+      <div class="environment-copy"><strong>${escapeHtml(device.name)}</strong><small>${escapeHtml(device.id)} · ${device.online ? 'online' : 'aguardando ESP'}</small>
         <small>${decimal(device.limits.temperatureMin)}–${decimal(device.limits.temperatureMax)} °C · ${decimal(device.limits.humidityMin)}–${decimal(device.limits.humidityMax)}% · ${decimal(device.limits.voltageMin)}–${decimal(device.limits.voltageMax)} V</small></div>
-        <button class="btn ghost small" data-action="edit-environment" data-id="${escapeHtml(device.id)}">Editar</button></article>`).join('') || '<p>Nenhum ambiente cadastrado.</p>'}</div></section>` : ''}
-    <div class="settings-grid">
-      <section class="card settings-card"><h2>Simulação</h2><p>Teste os estados do painel sem nenhum dispositivo.</p>
-        <div class="settings-line"><span>Gerar novas leituras</span><label class="toggle"><input type="checkbox" data-action="running" ${state.running ? 'checked' : ''} aria-label="Gerar novas leituras"></label></div>
-        <div class="settings-line"><span>ESP32 sem comunicação</span><label class="toggle"><input type="checkbox" data-action="offline" ${state.offline ? 'checked' : ''} aria-label="Simular dispositivo desconectado"></label></div>
-        <p class="muted-note">A desconexão cria um evento fictício e pausa as novas amostras até a reconexão.</p></section>
-      <section class="card settings-card"><h2>Canais na prévia</h2><p>Filtros visuais por perfil; nada será enviado.</p>${channels}</section>
-    </div>
-    ${section('Limiares do modo demo')}
-    <section class="card settings-card">
-      ${rangeRow('temperature', 'Temperatura máxima', 20, 35, '°C')}
-      ${rangeRow('humidity', 'Umidade máxima', 40, 90, '%')}
-      ${rangeRow('nominalVoltage', 'Tensão nominal', 100, 250, 'V')}
-      ${rangeRow('tolerance', 'Tolerância da tensão', 2, 20, '%')}
-      <div class="notice">Faixa demo: <strong id="voltage-range">${low}–${high} V</strong>. Os alertas reais usam os limites individuais dos ambientes.</div>
-    </section>
-    ${section('Integrações')}
-    <div class="integration-grid">${integrations}</div>
-    <p class="muted-note">${backend === 'android' ? 'A web consulta a API local do APK e compartilha seu estado.' : 'Esta prévia Node tem estado independente; abra o endereço do APK para usar a central.'} SMS, e-mail e WhatsApp continuam como roteamento visual.</p>`;
+      <div class="environment-actions"><button class="btn ghost small ${device.favorite ? 'is-favorite' : ''}" data-action="favorite-environment" data-id="${escapeHtml(device.id)}" aria-pressed="${!!device.favorite}" aria-label="${device.favorite ? 'Desafixar' : 'Fixar'} ${escapeHtml(device.name)} no início">★</button>
+      <button class="btn ghost small" data-action="edit-environment" data-id="${escapeHtml(device.id)}">Editar</button></div></article>`).join('') || '<section class="card empty">Nenhum ambiente cadastrado. O ESP32 também aparece aqui após a primeira leitura.</section>'}</div>`;
+}
+function settingsPage() {
+  const channels = Object.entries(CHANNELS).map(([key, label]) =>
+    `<div class="settings-line"><span>${label}</span><label class="toggle"><input type="checkbox" data-action="channel" data-channel="${key}" ${state.enabledChannels.includes(key) ? 'checked' : ''} aria-label="Habilitar ${label}"></label></div>`).join('');
+  return `${pageHead('CENTRAL / AJUSTES', 'Ajustes', 'Integrações locais do celular')}
+    <div class="settings-grid"><section class="card settings-card"><h2>ESP32 / MQTT</h2><p>Broker na porta 1883: ${state.mqttAvailable ? 'ativo' : 'indisponível'}. IP e chave ficam apenas no APK.</p></section>
+      <section class="card settings-card"><h2>Canais de alerta</h2>${channels}<p>Edite destinos em <a href="#equipe">Equipe</a>. SMTP e token WhatsApp são configurados apenas no APK.</p></section></div>
+    <section class="card settings-card"><h2>Central Android</h2><p>${backend === 'android' ? 'A interface é servida e processada pelo celular. Mantenha o acesso web numa rede confiável.' : 'Prévia Node com dados fictícios; abra o endereço fornecido pelo APK para acessar os ESPs.'}</p></section>`;
 }
 function render() {
-  if (backend === 'loading' || backend === 'error') return;
+  if (backend === 'loading' || backend === 'error' || backend === 'locked') return;
   const page = currentPage();
   document.querySelector('#side-nav').innerHTML = Object.keys(pages).map(p => navItem(p)).join('');
   document.querySelector('#bottom-nav').innerHTML = mainPages.map(p => navItem(p, true)).join('');
   document.querySelector('#page-heading').textContent = pages[page][0];
   document.querySelector('#header-date').textContent = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
   document.title = `${pages[page][0]} · Winterhold`;
-  document.querySelector('.demo-badge').innerHTML = `<span class="pulse"></span>${backend === 'android' && state.mode === 'esp' ? 'ESP32 / MQTT' : 'MODO DEMO'}`;
-  document.querySelector('.sidebar-note').innerHTML = `<span class="pulse"></span><strong>${backend === 'android' && state.mode === 'esp' ? 'ESP32 / MQTT' : 'DEMONSTRAÇÃO'}</strong><span>${backend === 'android' && state.mode === 'esp' ? escapeHtml(state.selectedDeviceId ? environmentName(state.selectedDeviceId) : 'Aguardando leituras') : 'Dados fictícios'}</span>`;
-  content.innerHTML = ({ inicio: overview, historico: historyPage, alertas: alertsPage, equipe: peoplePage, ajustes: settingsPage })[page]();
+  document.querySelector('.demo-badge').innerHTML = `<span class="pulse"></span>${backend === 'android' ? 'CENTRAL ANDROID' : 'PRÉVIA'}`;
+  document.querySelector('.sidebar-note').innerHTML = `<span class="pulse"></span><strong>${backend === 'android' ? 'ESP32 / MQTT' : 'PRÉVIA'}</strong><span>${backend === 'android' && state.mode === 'esp' ? escapeHtml(state.selectedDeviceId ? environmentName(state.selectedDeviceId) : 'Aguardando leituras') : 'Dados fictícios'}</span>`;
+  content.innerHTML = ({ inicio: overview, ambientes: environmentsPage, historico: historyPage, alertas: alertsPage, equipe: peoplePage, ajustes: settingsPage })[page]();
   if (dialog) renderDialog();
 }
 function openDialog(type, id = null) {
@@ -338,11 +323,11 @@ function renderDialog() {
     if (!item) { closeDialog(); return; }
     const routes = routeAlert(state, item);
     const rows = routes.map(route =>
-      `<div class="route-row"><strong>${escapeHtml(route.contact.name)}</strong><small>${route.channels.map(c => CHANNELS[c]).join(' · ')}</small></div>`).join('');
-    dialogFrame('Roteamento simulado', `<p>${escapeHtml(item.title)}. Nenhuma mensagem foi enviada.</p>${rows || '<div class="empty">Nenhum perfil ativo combina com este evento.</div>'}`,
+      `<div class="route-row"><strong>${escapeHtml(route.contact.name)}</strong><small>${route.channels.map(c => `${CHANNELS[c]}: ${escapeHtml(state.deliveries?.find(d => d.eventId === item.id && d.contactId === route.contact.id && d.channel === c)?.status || 'aguardando configuração')}`).join(' · ')}</small></div>`).join('');
+    dialogFrame('Entregas', `<p>${escapeHtml(item.title)}.</p>${rows || '<div class="empty">Nenhum perfil ativo combina com este evento.</div>'}`,
       '<button class="btn" data-action="close-dialog">Fechar</button>');
   } else if (dialog.type === 'add-contact') {
-    dialogFrame('Novo perfil demo', `<p>Sem telefone ou e-mail nesta fase.</p>
+    dialogFrame('Novo destinatário', `<p>Cadastre o perfil e depois edite telefone e e-mail.</p>
       <label class="form-field">Nome do perfil<input id="new-name" maxlength="60" required autocomplete="off" placeholder="Ex.: Equipe de manutenção"></label>
       <label class="form-field">Função<input id="new-role" maxlength="60" autocomplete="off" placeholder="Ex.: Elétrica"></label>
       <div class="notice">O perfil começa com todas as variáveis e canal SMS. Depois, edite seus filtros.</div>`,
@@ -352,10 +337,13 @@ function renderDialog() {
     if (!contact) { closeDialog(); return; }
     const toggles = (group, values, labels) => Object.entries(labels).map(([key, label]) =>
       `<div class="settings-line"><span>${label.label || label}</span><label class="toggle"><input type="checkbox" data-action="contact-item" data-id="${contact.id}" data-group="${group}" data-value="${key}" ${values.includes(key) ? 'checked' : ''} aria-label="${label.label || label}"></label></div>`).join('');
-    dialogFrame(`Filtros · ${escapeHtml(contact.name)}`, `<p>Escolha as variáveis e os canais para esta classe de serviço.</p>
+    dialogFrame(`Filtros · ${escapeHtml(contact.name)}`, `<p>Defina telefone em E.164 (+55…) e e-mail, depois selecione os filtros.</p>
+      <label class="form-field">Telefone<input id="contact-phone" type="tel" value="${escapeHtml(contact.phone || '')}" placeholder="+5511999999999"></label>
+      <label class="form-field">E-mail<input id="contact-email" type="email" value="${escapeHtml(contact.email || '')}"></label>
+      <button class="btn secondary small" data-action="save-destination">Salvar destinos</button>
       <span class="kicker">VARIÁVEIS</span>${toggles('metrics', contact.metrics, METRICS)}
       <span class="kicker">CANAIS</span>${toggles('channels', contact.channels, CHANNELS)}
-      <p>As chaves modificam apenas a prévia. Desativar todos os canais deixa o perfil sem rota.</p>`,
+      <p>Desativar todos os canais deixa o perfil sem rota.</p>`,
       '<button class="btn" data-action="close-dialog">Concluir</button>');
   } else if (dialog.type === 'environment') {
     const current = state.devices?.find(device => device.id === dialog.id);
@@ -384,7 +372,21 @@ document.addEventListener('click', async e => {
   if (action === 'routes') { openDialog('routes', target.dataset.id); return; }
   if (action === 'add-contact') { openDialog('add-contact'); return; }
   if (action === 'edit-contact') { openDialog('edit-contact', target.dataset.id); return; }
+  if (action === 'save-destination') {
+    const phoneInput = dialogRoot.querySelector('#contact-phone');
+    const emailInput = dialogRoot.querySelector('#contact-email');
+    const phone = phoneInput.value.trim(), email = emailInput.value.trim();
+    if (phone && !/^\+[1-9][0-9]{7,14}$/.test(phone)) { phoneInput.setCustomValidity('Use o formato internacional +55…'); phoneInput.reportValidity(); return; }
+    if (email && !emailInput.checkValidity()) { emailInput.reportValidity(); return; }
+    if (await sendAction({ type: 'contactDestination', id: dialog.id, phone, email }, () => { Object.assign(state.contacts.find(c => c.id === dialog.id), { phone, email }); })) closeDialog();
+    return;
+  }
   if (action === 'add-environment') { openDialog('environment'); return; }
+  if (action === 'favorite-environment') {
+    const device = state.devices?.find(item => item.id === target.dataset.id);
+    if (device) await sendAction({ type: 'favoriteEnvironment', id: device.id, value: !device.favorite }, () => { device.favorite = !device.favorite; });
+    return;
+  }
   if (action === 'edit-environment') { openDialog('environment', target.dataset.id); return; }
   if (action === 'save-environment') {
     const form = dialogRoot.querySelector('#environment-form');
@@ -486,3 +488,11 @@ setInterval(() => {
   else if (backend === 'error') boot();
 }, 5_000);
 boot();
+
+document.addEventListener('submit', async event => {
+  if (event.target.id !== 'unlock-form') return;
+  event.preventDefault();
+  webKey = new FormData(event.target).get('key').trim();
+  sessionStorage.setItem('winterhold-web-key', webKey);
+  await refreshFromApk();
+});
