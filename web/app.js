@@ -250,7 +250,7 @@ function alertsPage() {
     <div class="chip-row" role="group" aria-label="Filtrar alertas">${filters}</div>
     ${section(`Eventos (${shown.length})`)}
     <div class="alert-list">${shown.length ? shown.map(alertCard).join('') : '<div class="card empty">Nenhum evento neste filtro.</div>'}</div>
-    <p class="muted-note">Eventos fictícios automáticos são locais; apenas Testar envia aos destinos configurados.</p>`;
+    <p class="muted-note">${backend === 'android' ? 'Violações e normalizações do demo enviam mensagens reais marcadas SIMULADO, conforme destinos, métricas e canais.' : 'A prévia independente usa somente eventos locais, sem envios externos.'}</p>`;
 }
 function peoplePage() {
   const cards = state.contacts.map(contact => `<article class="card contact-card">
@@ -263,7 +263,7 @@ function peoplePage() {
   return `${pageHead('DESTINATÁRIOS / PERFIS', 'Equipe', 'Classes de serviço por variável e canal',
     `<button class="btn" data-action="add-contact">${icon('plus')} Novo perfil</button>`)}
     <div class="people-list">${cards}</div>
-    <p class="muted-note">Configure destinos e filtros. Um teste explícito no modo demo pode gerar envios reais.</p>`;
+    <p class="muted-note">Configure destinos e filtros. No APK, violações e normalizações do demo e os testes explícitos podem gerar envios reais.</p>`;
 }
 function rangeRow(key, label, min, max, unit) {
   return `<div class="range-row"><div class="flex-between"><span>${label}</span><strong id="limit-${key}">${state.limits[key]} ${unit}</strong></div>
