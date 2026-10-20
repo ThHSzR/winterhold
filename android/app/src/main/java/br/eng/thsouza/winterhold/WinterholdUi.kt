@@ -650,6 +650,11 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
     var from by remember { mutableStateOf(deliverySettings.smtpFrom) }
     var password by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
+    var metaId by remember { mutableStateOf(deliverySettings.metaPhoneNumberId) }
+    var metaTemplate by remember { mutableStateOf(deliverySettings.metaTemplateName) }
+    var metaLanguage by remember { mutableStateOf(deliverySettings.metaTemplateLanguage) }
+    var metaToken by remember { mutableStateOf("") }
+    var metaMessage by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { DemoCentral.refreshUrls() }
     LazyColumn(modifier, contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { PageTitle("Ajustes", "Integrações da central Android") }
@@ -701,11 +706,21 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
             if (message.isNotEmpty()) Text(message, color = Amber)
         } } }
         item { PanelCard { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SectionTitle("WhatsApp · Baileys no Termux")
-            Text("Instale a ponte Winterhold separada do bom-dia, pareie por QR e configure o mesmo token local.", color = Muted, fontSize = 12.sp)
-            SelectionContainer { Text(deliverySettings.bridgeToken, color = Amber, fontSize = 11.sp) }
-            TextButton(onClick = { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                .setPrimaryClip(ClipData.newPlainText("Token ponte WhatsApp", deliverySettings.bridgeToken)) }) { Text("Copiar token da ponte") }
+            SectionTitle("WhatsApp · Meta Cloud API")
+            Text("Envio direto do APK por HTTPS. Requer conta WhatsApp Business, token Meta e modelo aprovado com duas variáveis no corpo: título e detalhes.", color = Muted, fontSize = 12.sp)
+            OutlinedTextField(metaId, { metaId = it }, label = { Text("ID do número comercial na Meta") }, singleLine = true)
+            OutlinedTextField(metaTemplate, { metaTemplate = it }, label = { Text("Nome do modelo aprovado") }, singleLine = true)
+            OutlinedTextField(metaLanguage, { metaLanguage = it }, label = { Text("Idioma (ex.: pt_BR)") }, singleLine = true)
+            OutlinedTextField(metaToken, { metaToken = it }, label = { Text("Token Meta (deixe vazio para manter)") }, singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+            Button(onClick = { runCatching {
+                deliverySettings.metaPhoneNumberId = metaId.trim()
+                deliverySettings.metaTemplateName = metaTemplate.trim()
+                deliverySettings.metaTemplateLanguage = metaLanguage.trim()
+                if (metaToken.isNotBlank()) deliverySettings.metaAccessToken = metaToken.trim()
+            }.onSuccess { metaToken = ""; metaMessage = "WhatsApp configurado no celular" }
+                .onFailure { metaMessage = it.message.orEmpty() } }) { Text("Salvar WhatsApp") }
+            if (metaMessage.isNotEmpty()) Text(metaMessage, color = Amber)
         } } }
         item { Text("Destinatários: abra Alertas → Equipe.", color = Muted, fontSize = 12.sp) }
     }

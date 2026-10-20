@@ -14,7 +14,7 @@ flowchart LR
     APK --> DB["Histórico e alertas locais"]
     APK -->|"HTTP :8790 · chave"| WEB["Interface web"]
     APK -->|"SMS / SMTP"| AVISOS["Destinatários"]
-    APK -->|"HTTP loopback"| BRIDGE["Baileys · Termux"]
+    APK -->|"HTTPS"| META["WhatsApp Cloud API"]
 ```
 
 O firmware publica `winterhold/<DEVICE_ID>/leituras` em MQTT 3.1.1, QoS 0, a cada segundo. A central escuta publicadores na porta `1883` com usuário `winterhold` e chave gerada no aparelho. No aplicativo, **Ajustes → ESP32 / MQTT** mostra essa chave; ela não aparece na API web. Configure o IP do celular e a chave em `backend/include/config.h` antes de compilar o ESP32. Use uma rede local confiável. Detalhes do firmware: [backend/README.md](backend/README.md).
@@ -38,7 +38,7 @@ Cada ESP tem um `DEVICE_ID` único e corresponde a um ambiente físico. Na aba *
 ## Executar
 
 1. [Baixe o APK](https://raw.githubusercontent.com/ThHSzR/winterhold/main/dist/winterhold-demo-debug.apk) e instale no Android 8 ou superior. É um build de debug; uma instalação anterior com assinatura diferente pode precisar ser removida, o que apaga os dados locais.
-2. Abra o app e autorize notificações e operação em segundo plano. Em **Ajustes**, copie o endereço `http://IP_DO_CELULAR:8790/` e a **chave web**. Abra o endereço em outro dispositivo da mesma rede e informe a chave. Não é necessário Termux ou PM2 para MQTT, SMS, SMTP ou web.
+2. Abra o app e autorize notificações e operação em segundo plano. Em **Ajustes**, copie o endereço `http://IP_DO_CELULAR:8790/` e a **chave web**. Abra o endereço em outro dispositivo da mesma rede e informe a chave. Nenhum canal requer Termux, Node ou PM2.
 3. Em **Ajustes → ESP32 / MQTT** copie a chave MQTT; em **Ambientes** cadastre os IDs dos ESPs e configure e grave o [firmware](backend/README.md). O painel espera dados reais desde a primeira abertura.
 
 A web usa chave de acesso guardada somente no aparelho e na sessão do navegador. Como o transporte é HTTP na rede local, use VPN ou HTTPS ao expor externamente. Nenhum dado é puxado dos demais serviços do homelab. A saúde mostrada pela web é medida no celular Android. A prévia Node em [`web/`](web/README.md) é independente e usa dados fictícios.
@@ -46,7 +46,7 @@ A web usa chave de acesso guardada somente no aparelho e na sessão do navegador
 ## Estado e limites
 
 - Recepção MQTT, histórico local persistido e eventos de limiar e comunicação funcionam na central Android. O ESP32 não reenvia amostras perdidas durante desconexão.
-- Alertas reais novos geram notificação local; destinatários configurados recebem SMS via SIM e, se houver SMTP TLS 465 configurado, e-mail. WhatsApp usa a [ponte Baileys no Termux](bridge/whatsapp/README.md). Envios têm registro local antes de chamar o canal e não são repetidos automaticamente. Eventos fictícios nunca disparam entregas. Não há comando de ligar ou desligar o ar-condicionado.
+- Alertas reais novos geram notificação local; destinatários configurados recebem SMS via SIM e, se houver SMTP TLS 465 configurado, e-mail. WhatsApp usa a API oficial da Meta diretamente do APK, após configurar conta Business, token e modelo aprovado. Envios têm registro local antes de chamar o canal e não são repetidos automaticamente. Eventos fictícios nunca disparam entregas. Não há comando de ligar ou desligar o ar-condicionado.
 - A medição AC exige calibração e validação elétrica supervisionada antes de ser considerada confiável. O sensor DHT22 é lido a cada dois segundos e pode repetir valor nas publicações de um segundo.
 - O histórico usa arquivo privado atômico no aplicativo, sem SQLite. Limpar dados ou desinstalar apaga leituras e configurações.
 

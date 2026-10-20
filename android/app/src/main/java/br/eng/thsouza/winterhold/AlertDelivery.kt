@@ -19,11 +19,9 @@ import java.io.BufferedWriter
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
-import java.net.URLEncoder
 import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
-import java.util.UUID
 import java.util.concurrent.Executors
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -68,12 +66,18 @@ internal class DeliverySettings(private val context: Context) {
     var smtpPassword: String
         get() = secret("smtpPassword")
         set(value) = secret("smtpPassword", value)
-    val bridgeToken: String get() {
-        prefs.getString("bridgeToken", null)?.let { return it }
-        val value = UUID.randomUUID().toString() + UUID.randomUUID().toString()
-        check(prefs.edit().putString("bridgeToken", value).commit())
-        return value
-    }
+    var metaPhoneNumberId: String
+        get() = prefs.getString("metaPhoneNumberId", "") ?: ""
+        set(value) { require(value.isEmpty() || value.matches(Regex("[0-9]{1,32}"))); prefs.edit().putString("metaPhoneNumberId", value).apply() }
+    var metaTemplateName: String
+        get() = prefs.getString("metaTemplateName", "") ?: ""
+        set(value) { require(value.isEmpty() || value.matches(Regex("[a-z0-9_]{1,100}"))); prefs.edit().putString("metaTemplateName", value).apply() }
+    var metaTemplateLanguage: String
+        get() = prefs.getString("metaTemplateLanguage", "pt_BR") ?: "pt_BR"
+        set(value) { require(value.matches(Regex("[a-z]{2}_[A-Z]{2}"))); prefs.edit().putString("metaTemplateLanguage", value).apply() }
+    var metaAccessToken: String
+        get() = secret("metaAccessToken")
+        set(value) = secret("metaAccessToken", value)
     companion object {
         fun validEmail(value: String) = value.matches(Regex("[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,190}\\.[A-Za-z]{2,20}"))
     }
@@ -86,7 +90,6 @@ internal class AlertDelivery(private val context: Context) {
     private val executor = Executors.newSingleThreadExecutor()
     private val notifications = context.getSystemService(NotificationManager::class.java)
     private val knownEvents = mutableSetOf<String>()
-    private var lastPoll = 0L
     init {
         notifications.createNotificationChannel(NotificationChannel("winterhold-alerts", "Alertas de ambientes", NotificationManager.IMPORTANCE_HIGH))
     }
@@ -96,32 +99,6 @@ internal class AlertDelivery(private val context: Context) {
     fun status(eventId: String, contactId: String, channel: Channel): String? =
         ledger.getString("$eventId:$contactId:${channel.name}", null)
     fun prime(store: DemoStore) { knownEvents.addAll(store.events.map { it.id }) }
-    fun refreshWhatsApp(store: DemoStore) {
-        val now = System.currentTimeMillis()
-        if (now - lastPoll < 30_000) return
-        lastPoll = now
-        store.events.filter { !it.simulated }.take(100).forEach { event ->
-            store.contacts.forEach { contact ->
-                val id = "${event.id}:${contact.id}:${Channel.WHATSAPP.name}"
-                if (ledger.getString(id, null) !in listOf("submitted", "server_ack", "uncertain")) return@forEach
-                executor.execute {
-                    runCatching {
-                        val url = "http://127.0.0.1:8791/status?id=" + URLEncoder.encode(id, "UTF-8")
-                        val connection = URL(url).openConnection() as HttpURLConnection
-                        try {
-                            connection.connectTimeout = 2000; connection.readTimeout = 3000
-                            connection.setRequestProperty("Authorization", "Bearer ${settings.bridgeToken}")
-                            if (connection.responseCode == 200) {
-                                val status = JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).optString("status")
-                                if (status in setOf("delivered", "server_ack", "uncertain")) record(id, status)
-                            }
-                        } finally { connection.disconnect() }
-                    }.onFailure { Log.w("Winterhold", "Ponte WhatsApp indisponível", it) }
-                }
-            }
-        }
-    }
-
     fun dispatch(store: DemoStore, events: List<AlertEvent>) {
         events.filter { knownEvents.add(it.id) && !it.simulated && !it.resolved && it.severity != Severity.INFO }.forEach { event ->
             val noticeId = "notice:${event.id}"
@@ -145,6 +122,8 @@ internal class AlertDelivery(private val context: Context) {
                 if (channel == Channel.EMAIL && (settings.smtpHost.isBlank() || settings.smtpUser.isBlank() ||
                     settings.smtpFrom.isBlank() || settings.smtpPassword.isBlank())) return@forEach
                 if (channel == Channel.SMS && context.checkSelfPermission(Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) return@forEach
+                if (channel == Channel.WHATSAPP && (settings.metaPhoneNumberId.isBlank() ||
+                    settings.metaTemplateName.isBlank() || settings.metaAccessToken.isBlank())) return@forEach
                 val id = "${event.id}:${contact.id}:${channel.name}"
                 if (ledger.getString(id, null) != null) return@forEach
                 runCatching { record(id, "reserved") }.onFailure { Log.e("Winterhold", "Registro de entrega falhou", it) }
@@ -155,7 +134,7 @@ internal class AlertDelivery(private val context: Context) {
                                 when (channel) {
                                     Channel.SMS -> sms(destination, message, id)
                                     Channel.EMAIL -> { smtp(destination, event.title, message); record(id, "submitted") }
-                                    Channel.WHATSAPP -> record(id, whatsapp(destination, message, id))
+                                    Channel.WHATSAPP -> { whatsapp(destination, event.title, event.detail); record(id, "submitted") }
                                 }
                             }.onFailure { error ->
                                 Log.e("Winterhold", "Entrega ${channel.name} falhou para ${contact.id}", error)
@@ -183,18 +162,29 @@ internal class AlertDelivery(private val context: Context) {
         record(id, "queued")
         manager.sendMultipartTextMessage(to, null, parts, intents, null)
     }
-    private fun whatsapp(to: String, message: String, id: String): String {
-        val connection = (URL("http://127.0.0.1:8791/send").openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"; connectTimeout = 3000; readTimeout = 8000; doOutput = true
-            setRequestProperty("Authorization", "Bearer ${settings.bridgeToken}")
-            setRequestProperty("Content-Type", "application/json")
-        }
+    private fun whatsapp(to: String, title: String, detail: String) {
+        val endpoint = URL("https://graph.facebook.com/v23.0/${settings.metaPhoneNumberId}/messages")
+        val parameters = org.json.JSONArray()
+            .put(JSONObject().put("type", "text").put("text", title.take(100)))
+            .put(JSONObject().put("type", "text").put("text", detail.take(250)))
+        val components = org.json.JSONArray().put(JSONObject().put("type", "body").put("parameters", parameters))
+        val request = JSONObject().put("messaging_product", "whatsapp")
+            .put("to", to.drop(1)).put("type", "template")
+            .put("template", JSONObject().put("name", settings.metaTemplateName)
+                .put("language", JSONObject().put("code", settings.metaTemplateLanguage))
+                .put("components", components))
+        val connection = endpoint.openConnection() as HttpURLConnection
         try {
-            connection.outputStream.use { it.write(JSONObject().put("id", id).put("to", to).put("text", message)
-                .toString().toByteArray(StandardCharsets.UTF_8)) }
-            check(connection.responseCode in 200..299) { "Ponte WhatsApp: HTTP ${connection.responseCode}" }
-            return JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-                .optString("status", "submitted").takeIf { it in setOf("delivered", "server_ack", "submitted", "uncertain") } ?: "submitted"
+            connection.requestMethod = "POST"; connection.connectTimeout = 5000; connection.readTimeout = 10000
+            connection.doOutput = true
+            connection.setRequestProperty("Authorization", "Bearer ${settings.metaAccessToken}")
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            connection.outputStream.use { it.write(request.toString().toByteArray(StandardCharsets.UTF_8)) }
+            check(connection.responseCode in 200..299) { "Meta WhatsApp: HTTP ${connection.responseCode}" }
+            val result = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+            check(result.optJSONArray("messages")?.optJSONObject(0)?.optString("id")?.isNotBlank() == true) {
+                "Meta não confirmou o envio"
+            }
         } finally { connection.disconnect() }
     }
     private fun smtp(to: String, subject: String, message: String) {

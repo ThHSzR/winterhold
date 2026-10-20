@@ -68,7 +68,6 @@ object DemoCentral {
             store.advance()
             store.heartbeat()
             delivery?.dispatch(store, store.events)
-            delivery?.refreshWhatsApp(store)
             refreshUrls()
             save()
             main.postDelayed(this, 5_000)
