@@ -92,14 +92,20 @@ class CentralIntegrationTest {
         awaitCondition { request("/healthz").first == 200 }
         assertTrue(request("/").second.contains("Winterhold"))
         assertEquals(200, request("/api/v1/state").first)
+        val environment = """{"type":"saveEnvironment","environment":{"id":"ci-esp","name":"Laboratório","icon":"lab","limits":{"temperatureMin":18,"temperatureMax":25,"humidityMin":30,"humidityMax":70,"voltageMin":198,"voltageMax":242}}}"""
+        assertEquals(200, request("/api/v1/action", environment).first)
+        assertEquals(400, request("/api/v1/action", environment.replace("\"temperatureMin\":18", "\"temperatureMin\":30")).first)
         publishMqttSample()
         awaitCondition {
             JSONObject(request("/api/v1/state").second).getJSONArray("devices").length() > 0
         }
         val liveState = JSONObject(request("/api/v1/action", """{"type":"mode","value":"esp"}""").second)
         assertEquals("ci-esp", liveState.getString("selectedDeviceId"))
+        assertEquals("Laboratório", liveState.getJSONArray("devices").getJSONObject(0).getString("name"))
+        assertEquals("lab", liveState.getJSONArray("devices").getJSONObject(0).getString("icon"))
         assertEquals(31.5, liveState.getJSONArray("samples").getJSONObject(0).getDouble("temperature"), 0.01)
         assertTrue(liveState.getJSONArray("events").getJSONObject(0).getString("title").contains("Temperatura"))
+        assertEquals("ci-esp", liveState.getJSONArray("events").getJSONObject(0).getString("deviceId"))
         request("/api/v1/action", """{"type":"mode","value":"demo"}""")
         assertEquals(200, request("/api/v1/action", """{"type":"running","value":false}""").first)
         assertEquals(200, request("/api/v1/action", """{"type":"limit","key":"temperature","value":29}""").first)
@@ -122,6 +128,7 @@ class CentralIntegrationTest {
         val state = JSONObject(request("/api/v1/state").second)
         assertEquals(29, state.getJSONObject("limits").getInt("temperature"))
         assertEquals(230, state.getJSONObject("limits").getInt("nominalVoltage"))
+        assertEquals("Laboratório", state.getJSONArray("devices").getJSONObject(0).getString("name"))
         assertFalse(state.getBoolean("running"))
         assertEquals(400, request("/api/v1/action", """{"type":"limit","key":"temperature","value":900}""").first)
         instrumentation.runOnMainSync { reopened.finish() }

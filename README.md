@@ -27,13 +27,17 @@ O firmware publica `winterhold/<DEVICE_ID>/leituras` em MQTT 3.1.1, QoS 0, a cad
 }
 ```
 
-O campo `timestamp` pode ser nulo quando o ESP não sincronizou o horário. A central usa o horário de recebimento do celular. Cada medição pode ser nula quando inválida; o módulo de tensão publica `null` até ser calibrado. A central mantém até 60 leituras por dispositivo identificado (máximo 32) e 500 eventos ao salvar o estado. Detecta temperatura e umidade acima do limite, tensão fora da faixa configurada e ausência de amostras por mais de 15 segundos. Dispositivos podem ser selecionados no app ou na web. Limiares não reavaliam o histórico anterior.
+O campo `timestamp` pode ser nulo quando o ESP não sincronizou o horário. A central usa o horário de recebimento do celular. Cada medição pode ser nula quando inválida; o módulo de tensão publica `null` até ser calibrado. A central mantém até 60 leituras por dispositivo identificado (máximo 32 ambientes) e 500 eventos ao salvar o estado.
+
+## Vários ambientes
+
+Cada ESP tem um `DEVICE_ID` único e corresponde a um ambiente físico. Em **Ajustes → ESP32 / MQTT → Adicionar ambiente**, cadastre esse ID, um nome como “Laboratório 02”, escolha um dos ícones e configure mínimos e máximos de temperatura, umidade e tensão. Também é possível editar um ESP detectado automaticamente. O aplicativo e a web compartilham esses cadastros e permitem selecionar a sala exibida; eventos indicam de qual ambiente vieram. Cada nova amostra é comparada apenas com a faixa do seu ambiente, e uma perda de sinal por mais de 15 segundos gera evento para o ESP correspondente. Alterações de limites só afetam leituras futuras. Configurações e leituras da versão anterior são migradas ao atualizar o aplicativo.
 
 ## Executar
 
 1. [Baixe o APK](https://raw.githubusercontent.com/ThHSzR/winterhold/main/dist/winterhold-demo-debug.apk) e instale no Android 8 ou superior. É um build de debug; uma instalação anterior com assinatura diferente pode precisar ser removida, o que apaga os dados locais.
 2. Abra o app e autorize a operação em segundo plano solicitada pelo Android. Em **Ajustes**, copie o endereço `http://IP_DO_CELULAR:8790/` e abra em outro dispositivo da mesma rede. Não é necessário Termux, PM2 ou homelab para a central Android.
-3. Para dados reais, em **Ajustes → ESP32 / MQTT** copie a chave, configure e grave o [firmware](backend/README.md), depois ative **Mostrar leituras reais**. Sem ESP32, continue em modo demo.
+3. Para dados reais, em **Ajustes → ESP32 / MQTT** copie a chave, cadastre os ambientes com os mesmos IDs definidos em cada ESP, configure e grave o [firmware](backend/README.md), depois ative **Mostrar leituras reais**. Sem ESP32, continue em modo demo.
 
 A web local acadêmica usa HTTP sem login e aceita ações de ajuste; restrinja a rede a pessoas de confiança. Nenhum dado é puxado dos demais serviços do homelab. A saúde mostrada pela web é medida no celular Android. A prévia Node em [`web/`](web/README.md) é independente e usa dados fictícios.
 

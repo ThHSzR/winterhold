@@ -106,6 +106,13 @@ function escapeHtml(value) {
   })[char]);
 }
 const decimal = value => value == null ? '—' : new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value);
+const environmentIcons = { snow: '❄️', classroom: '🏫', lab: '🧪', office: '🏢', server: '🖥️' };
+const environmentName = id => {
+  const profile = state.devices?.find(device => device.id === id);
+  return profile ? `${environmentIcons[profile.icon] || '❄️'} ${profile.name}` : id;
+};
+const environmentChoices = () => backend === 'android' && state.mode === 'esp' ? `<div class="chip-row environment-choices" role="group" aria-label="Selecionar ambiente">${(state.devices || []).map(device =>
+  `<button class="chip ${state.selectedDeviceId === device.id ? 'active' : ''}" data-action="selected-device" data-id="${escapeHtml(device.id)}" aria-pressed="${state.selectedDeviceId === device.id}">${escapeHtml(environmentName(device.id))}${device.online ? ' · online' : ''}</button>`).join('')}</div>` : '';
 const time = value => new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(value);
 const dateTime = value => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(value);
 const currentPage = () => {
@@ -146,28 +153,30 @@ function overview() {
   const live = backend === 'android' && state.mode === 'esp';
   const selected = state.devices?.find(device => device.id === state.selectedDeviceId);
   const status = live ? { label: selected?.online ? 'Online' : 'Sem sinal', tone: selected?.online ? 'normal' : 'offline' } : health(state);
-  const rows = state.events.slice(0, 3).map(item => `<div class="event-row">
+  const relevant = live ? state.events.filter(item => item.deviceId === state.selectedDeviceId) : state.events.filter(item => item.simulated);
+  const rows = relevant.slice(0, 3).map(item => `<div class="event-row">
     ${eventIcon(item)}<div class="event-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></div>
     <span class="event-time">${time(item.time)}</span></div>`).join('');
   const device = state.deviceHealth;
-  return `${pageHead('PAINEL / AMBIENTE', 'Visão geral', live ? `ESP32 · ${escapeHtml(state.selectedDeviceId || 'aguardando leituras')}` : 'Sala 01 · Ambiente demonstrativo · leituras fictícias')}
+  return `${pageHead('PAINEL / AMBIENTE', 'Visão geral', live ? `${escapeHtml(selected ? environmentName(selected.id) : 'Aguardando ESP32')} · ${escapeHtml(state.selectedDeviceId || '')}` : 'Sala 01 · Ambiente demonstrativo · leituras fictícias')}
+    ${environmentChoices()}
     <div class="overview-grid">
       <section class="card hero" aria-label="Temperatura atual demonstrativa">
         <div class="hero-top"><span class="kicker">TEMPERATURA AMBIENTE</span>${pill(status.label, status.tone)}</div>
         <div class="hero-number">${decimal(latest.temperature)}<sup>°C</sup></div>
-        <div class="hero-caption">${live ? 'Amostra recebida do ESP32' : 'Amostra simulada'} · limite ${state.limits.temperature} °C</div>
+        <div class="hero-caption">${live ? `Amostra ESP32 · faixa ${decimal(selected?.limits.temperatureMin)}–${decimal(selected?.limits.temperatureMax)} °C` : `Amostra simulada · limite ${state.limits.temperature} °C`}</div>
         <div class="hero-chart">${chart(state.samples.slice(0, 18).map(s => s.temperature), true)}</div>
         <div class="hero-bottom flex-between"><span>${live ? 'Última amostra recebida' : 'Última amostra fictícia'}</span><strong>${latest.time ? time(latest.time) : '—'}</strong></div>
       </section>
       <div class="metric-stack">
-        ${metricCard('humidity', latest.humidity, `Limite ${state.limits.humidity}%`)}
-        ${metricCard('voltage', latest.voltage, `Nominal ${state.limits.nominalVoltage} V`)}
+        ${metricCard('humidity', latest.humidity, live ? `${decimal(selected?.limits.humidityMin)}–${decimal(selected?.limits.humidityMax)}%` : `Limite ${state.limits.humidity}%`)}
+        ${metricCard('voltage', latest.voltage, live ? `${decimal(selected?.limits.voltageMin)}–${decimal(selected?.limits.voltageMax)} V` : `Nominal ${state.limits.nominalVoltage} V`)}
       </div>
     </div>
     <div class="below-grid">
       <div>${section('Central e dispositivo')}
         <section class="card card-pad status-list">
-          <div class="status-row"><span class="status-dot ${live ? (selected?.online ? '' : 'offline') : state.offline ? 'offline' : state.running ? '' : 'idle'}"></span><div><strong>ESP32 → celular</strong><small>${live ? 'MQTT na rede local' : 'Conexão local simulada'}</small></div><span class="status-right">${live ? (selected?.online ? 'Online' : 'Sem sinal') : state.offline ? 'Sem sinal (demo)' : state.running ? 'Simulando' : 'Pausado'}</span></div>
+          <div class="status-row"><span class="status-dot ${live ? (selected?.online ? '' : 'offline') : state.offline ? 'offline' : state.running ? '' : 'idle'}"></span><div><strong>${live && selected ? escapeHtml(environmentName(selected.id)) : 'ESP32 → celular'}</strong><small>${live ? `MQTT · ${escapeHtml(selected?.id || 'aguardando')}` : 'Conexão local simulada'}</small></div><span class="status-right">${live ? (selected?.online ? 'Online' : 'Sem sinal') : state.offline ? 'Sem sinal (demo)' : state.running ? 'Simulando' : 'Pausado'}</span></div>
           <div class="divider"></div>
           <div class="status-row"><span class="circle-icon">${icon('database')}</span><div><strong>Histórico</strong><small>${backend === 'android' ? 'Persistido no celular' : 'Na memória do navegador'}</small></div><span class="status-right">${state.samples.length} amostras</span></div>
           <div class="integration-mini"><span>MQTT · ${backend === 'android' && state.mqttAvailable ? 'ativo' : 'indisponível'}</span><span>API local · ${backend === 'android' ? 'ativa' : 'prévia'}</span></div>
@@ -197,6 +206,7 @@ function historyPage() {
   const filters = Object.entries(METRICS).map(([key, value]) =>
     `<button class="chip ${key === metric ? 'active' : ''}" data-action="metric" data-metric="${key}" aria-pressed="${key === metric}">${value.label}</button>`).join('');
   return `${pageHead('LEITURAS / HISTÓRICO', 'Histórico', backend === 'android' ? 'Amostras locais persistidas no APK' : 'Amostras geradas neste navegador')}
+    ${environmentChoices()}
     <div class="chip-row" role="group" aria-label="Variável do histórico">${filters}</div>
     ${section('Tendência')}
     <section class="card chart-card"><div class="chart-head"><span class="kicker">${selected.label.toUpperCase()}</span><strong>${decimal(samples[0]?.[metric])} <small>${selected.unit}</small></strong></div>
@@ -211,7 +221,7 @@ function alertCard(item) {
   const tone = item.resolved ? 'ok' : item.severity;
   return `<article class="card alert-card ${item.severity}">
     <div class="alert-top">${eventIcon(item)}<div class="event-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></div></div>
-    <div class="alert-meta">${pill(label, tone)}<span class="tag">${item.simulated ? 'DEMO' : 'ESP32'}</span><span class="time">${dateTime(item.time)}</span></div>
+    <div class="alert-meta">${pill(label, tone)}<span class="tag">${item.simulated ? 'DEMO' : escapeHtml(environmentName(item.deviceId))}</span><span class="time">${dateTime(item.time)}</span></div>
     <div class="alert-actions"><button class="btn secondary small" data-action="routes" data-id="${item.id}">Ver roteamento</button>
     ${item.resolved ? '' : `<button class="btn ghost small" data-action="resolve" data-id="${item.id}">Marcar resolvido</button>`}</div></article>`;
 }
@@ -261,7 +271,13 @@ function settingsPage() {
     ${backend === 'android' ? `<section class="card settings-card"><h2>ESP32 / MQTT</h2>
       <div class="settings-line"><span>Mostrar leituras reais</span><label class="toggle"><input type="checkbox" data-action="mode" ${live ? 'checked' : ''} aria-label="Mostrar leituras reais"></label></div>
       <p>MQTT na porta 1883: ${state.mqttAvailable ? 'ativo' : 'indisponível'}. Configure o IP do celular e a chave exibida apenas nos ajustes do APK.</p>
-      <div class="chip-row">${(state.devices || []).map(device => `<button class="chip ${state.selectedDeviceId === device.id ? 'active' : ''}" data-action="selected-device" data-id="${escapeHtml(device.id)}">${escapeHtml(device.id)} · ${device.online ? 'online' : 'sem sinal'}</button>`).join('') || 'Aguardando ESP32'}</div></section>` : ''}
+      <div class="flex-between"><h2>Ambientes</h2><button class="btn secondary small" data-action="add-environment">+ Adicionar</button></div>
+      <p>Um DEVICE_ID por ESP32. Cadastre antes da primeira leitura ou personalize um dispositivo detectado.</p>
+      <div class="environment-list">${(state.devices || []).map(device => `<article class="environment-card">
+        <span class="environment-avatar" aria-hidden="true">${environmentIcons[device.icon] || '❄️'}</span>
+        <div class="environment-copy"><strong>${escapeHtml(device.name)}</strong><small>${escapeHtml(device.id)} · ${device.online ? 'online' : 'aguardando ESP'}</small>
+        <small>${decimal(device.limits.temperatureMin)}–${decimal(device.limits.temperatureMax)} °C · ${decimal(device.limits.humidityMin)}–${decimal(device.limits.humidityMax)}% · ${decimal(device.limits.voltageMin)}–${decimal(device.limits.voltageMax)} V</small></div>
+        <button class="btn ghost small" data-action="edit-environment" data-id="${escapeHtml(device.id)}">Editar</button></article>`).join('') || '<p>Nenhum ambiente cadastrado.</p>'}</div></section>` : ''}
     <div class="settings-grid">
       <section class="card settings-card"><h2>Simulação</h2><p>Teste os estados do painel sem nenhum dispositivo.</p>
         <div class="settings-line"><span>Gerar novas leituras</span><label class="toggle"><input type="checkbox" data-action="running" ${state.running ? 'checked' : ''} aria-label="Gerar novas leituras"></label></div>
@@ -269,13 +285,13 @@ function settingsPage() {
         <p class="muted-note">A desconexão cria um evento fictício e pausa as novas amostras até a reconexão.</p></section>
       <section class="card settings-card"><h2>Canais na prévia</h2><p>Filtros visuais por perfil; nada será enviado.</p>${channels}</section>
     </div>
-    ${section('Limiares de exemplo')}
+    ${section('Limiares do modo demo')}
     <section class="card settings-card">
       ${rangeRow('temperature', 'Temperatura máxima', 20, 35, '°C')}
       ${rangeRow('humidity', 'Umidade máxima', 40, 90, '%')}
       ${rangeRow('nominalVoltage', 'Tensão nominal', 100, 250, 'V')}
       ${rangeRow('tolerance', 'Tolerância da tensão', 2, 20, '%')}
-      <div class="notice">Faixa: <strong id="voltage-range">${low}–${high} V</strong>. Novas amostras reais são avaliadas; as antigas não são reavaliadas.</div>
+      <div class="notice">Faixa demo: <strong id="voltage-range">${low}–${high} V</strong>. Os alertas reais usam os limites individuais dos ambientes.</div>
     </section>
     ${section('Integrações')}
     <div class="integration-grid">${integrations}</div>
@@ -290,7 +306,7 @@ function render() {
   document.querySelector('#header-date').textContent = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
   document.title = `${pages[page][0]} · Winterhold`;
   document.querySelector('.demo-badge').innerHTML = `<span class="pulse"></span>${backend === 'android' && state.mode === 'esp' ? 'ESP32 / MQTT' : 'MODO DEMO'}`;
-  document.querySelector('.sidebar-note').innerHTML = `<span class="pulse"></span><strong>${backend === 'android' && state.mode === 'esp' ? 'ESP32 / MQTT' : 'DEMONSTRAÇÃO'}</strong><span>${backend === 'android' && state.mode === 'esp' ? escapeHtml(state.selectedDeviceId || 'Aguardando leituras') : 'Dados fictícios'}</span>`;
+  document.querySelector('.sidebar-note').innerHTML = `<span class="pulse"></span><strong>${backend === 'android' && state.mode === 'esp' ? 'ESP32 / MQTT' : 'DEMONSTRAÇÃO'}</strong><span>${backend === 'android' && state.mode === 'esp' ? escapeHtml(state.selectedDeviceId ? environmentName(state.selectedDeviceId) : 'Aguardando leituras') : 'Dados fictícios'}</span>`;
   content.innerHTML = ({ inicio: overview, historico: historyPage, alertas: alertsPage, equipe: peoplePage, ajustes: settingsPage })[page]();
   if (dialog) renderDialog();
 }
@@ -341,6 +357,20 @@ function renderDialog() {
       <span class="kicker">CANAIS</span>${toggles('channels', contact.channels, CHANNELS)}
       <p>As chaves modificam apenas a prévia. Desativar todos os canais deixa o perfil sem rota.</p>`,
       '<button class="btn" data-action="close-dialog">Concluir</button>');
+  } else if (dialog.type === 'environment') {
+    const current = state.devices?.find(device => device.id === dialog.id);
+    const limits = current?.limits || { temperatureMin: 18, temperatureMax: 26,
+      humidityMin: 30, humidityMax: 70, voltageMin: 198, voltageMax: 242 };
+    const numberField = (label, key, min, max) => `<label class="form-field">${label}<input type="number" name="${key}" min="${min}" max="${max}" step="any" required value="${limits[key]}"></label>`;
+    dialogFrame(current ? 'Editar ambiente' : 'Novo ambiente', `<form id="environment-form" autocomplete="off">
+      <label class="form-field">DEVICE_ID do firmware<input name="id" pattern="[A-Za-z0-9_-]{1,40}" maxlength="40" required value="${escapeHtml(current?.id || '')}" ${current ? 'readonly' : ''}></label>
+      <label class="form-field">Nome do ambiente<input name="name" maxlength="60" required value="${escapeHtml(current?.name || '')}" placeholder="Ex.: Laboratório 02"></label>
+      <label class="form-field">Ícone<select name="icon">${Object.entries(environmentIcons).map(([key, symbol]) => `<option value="${key}" ${current?.icon === key ? 'selected' : ''}>${symbol} ${key}</option>`).join('')}</select></label>
+      <div class="environment-ranges"><strong>Temperatura (°C)</strong>${numberField('Mínimo', 'temperatureMin', -40, 85)}${numberField('Máximo', 'temperatureMax', -40, 85)}
+      <strong>Umidade (%)</strong>${numberField('Mínimo', 'humidityMin', 0, 100)}${numberField('Máximo', 'humidityMax', 0, 100)}
+      <strong>Tensão (V)</strong>${numberField('Mínimo', 'voltageMin', 0, 300)}${numberField('Máximo', 'voltageMax', 0, 300)}</div>
+      <p id="environment-error" class="form-error" role="alert"></p></form>`,
+      '<button class="btn ghost" data-action="close-dialog">Cancelar</button><button class="btn" data-action="save-environment">Salvar ambiente</button>');
   }
 }
 
@@ -354,6 +384,24 @@ document.addEventListener('click', async e => {
   if (action === 'routes') { openDialog('routes', target.dataset.id); return; }
   if (action === 'add-contact') { openDialog('add-contact'); return; }
   if (action === 'edit-contact') { openDialog('edit-contact', target.dataset.id); return; }
+  if (action === 'add-environment') { openDialog('environment'); return; }
+  if (action === 'edit-environment') { openDialog('environment', target.dataset.id); return; }
+  if (action === 'save-environment') {
+    const form = dialogRoot.querySelector('#environment-form');
+    if (!form.reportValidity()) return;
+    const values = new FormData(form);
+    const keys = ['temperatureMin', 'temperatureMax', 'humidityMin', 'humidityMax', 'voltageMin', 'voltageMax'];
+    const limits = Object.fromEntries(keys.map(key => [key, Number(values.get(key))]));
+    const error = dialogRoot.querySelector('#environment-error');
+    if (['temperature', 'humidity', 'voltage'].some(key => limits[`${key}Min`] >= limits[`${key}Max`])) {
+      error.textContent = 'O mínimo deve ser menor que o máximo em cada variável.';
+      return;
+    }
+    const environment = { id: String(values.get('id')), name: String(values.get('name')).trim(), icon: String(values.get('icon')), limits };
+    if (await sendAction({ type: 'saveEnvironment', environment }, () => {})) { closeDialog(); render(); }
+    else error.textContent = 'Não foi possível salvar. Confira os campos e a conexão com o APK.';
+    return;
+  }
   if (action === 'metric') { metric = target.dataset.metric; render(); return; }
   if (action === 'selected-device') {
     await sendAction({ type: 'selectedDevice', value: target.dataset.id }, () => {});

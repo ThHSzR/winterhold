@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,10 +15,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -91,6 +95,10 @@ private val Ice = Color(0xFF78DCE8)
 private val Muted = Color(0xFFA9C2C9)
 private val Amber = Color(0xFFFFCA79)
 private val Red = Color(0xFFFF8C88)
+
+private fun environmentIcon(code: String) = when (code) {
+    "classroom" -> "🏫"; "lab" -> "🧪"; "office" -> "🏢"; "server" -> "🖥️"; else -> "❄️"
+}
 
 private val WinterholdColors = darkColorScheme(
     primary = Ice,
@@ -181,7 +189,7 @@ private fun DemoBanner(store: DemoStore) {
     ) {
         Text(if (store.liveMode) "●  ESP32 / MQTT" else "●  MODO DEMO", color = Ice, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         Spacer(Modifier.weight(1f))
-        Text(if (store.liveMode) (store.selectedDeviceId ?: "Aguardando ESP32") else "Dados fictícios", color = Muted, fontSize = 12.sp)
+        Text(if (store.liveMode) store.selectedEnvironment?.let { "${environmentIcon(it.icon)} ${it.name}" } ?: "Aguardando ESP32" else "Dados fictícios", color = Muted, fontSize = 12.sp)
     }
 }
 
@@ -251,7 +259,16 @@ private fun HomeScreen(store: DemoStore, modifier: Modifier,
     LazyColumn(modifier, contentPadding = PaddingValues(18.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item { DemoBanner(store) }
-        item { PageTitle("Visão geral", if (store.liveMode) "ESP32 · ${store.selectedDeviceId ?: "Aguardando leituras"}" else "Sala 01 · Ambiente demonstrativo") }
+        item { PageTitle("Visão geral", if (store.liveMode) store.selectedEnvironment?.let { "${environmentIcon(it.icon)} ${it.name} · ${it.deviceId}" } ?: "Aguardando ESP32" else "Sala 01 · Ambiente demonstrativo") }
+        if (store.liveMode && store.environments.isNotEmpty()) item {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(store.environments.values.sortedBy { it.name }, key = { it.deviceId }) { profile ->
+                    FilterChip(selected = store.selectedDeviceId == profile.deviceId,
+                        onClick = { store.selectedDeviceId = profile.deviceId },
+                        label = { Text("${environmentIcon(profile.icon)} ${profile.name}") })
+                }
+            }
+        }
         item {
             PanelCard {
                 Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -283,10 +300,10 @@ private fun HomeScreen(store: DemoStore, modifier: Modifier,
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box(Modifier.weight(1f)) {
-                    MetricTile(Metric.HUMIDITY, latest.humidity, "Limite ${store.humidityLimit.toInt()}%")
+                    MetricTile(Metric.HUMIDITY, latest.humidity, store.selectedEnvironment?.let { "${it.humidityMin.toInt()}–${it.humidityMax.toInt()}%" } ?: "Limite ${store.humidityLimit.toInt()}%")
                 }
                 Box(Modifier.weight(1f)) {
-                    MetricTile(Metric.VOLTAGE, latest.voltage, "Nominal ${store.nominalVoltage.toInt()} V")
+                    MetricTile(Metric.VOLTAGE, latest.voltage, store.selectedEnvironment?.let { "${it.voltageMin.toInt()}–${it.voltageMax.toInt()} V" } ?: "Nominal ${store.nominalVoltage.toInt()} V")
                 }
             }
         }
@@ -301,7 +318,8 @@ private fun HomeScreen(store: DemoStore, modifier: Modifier,
             }
         }
         item { SectionTitle("Eventos recentes", "Ver todos", onAlerts) }
-        items(store.events.take(2), key = { it.id }) { event -> EventCard(event, store, compact = true) }
+        items(store.events.filter { if (store.liveMode) it.deviceId == store.selectedDeviceId else it.simulated }
+            .take(2), key = { it.id }) { event -> EventCard(event, store, compact = true) }
         item { Text("A central monitora e registra; nenhum comando é enviado ao ar-condicionado.",
             color = Muted, fontSize = 11.sp) }
     }
@@ -351,7 +369,7 @@ private fun HistoryScreen(store: DemoStore, modifier: Modifier) {
     LazyColumn(modifier, contentPadding = PaddingValues(18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { DemoBanner(store) }
-        item { PageTitle("Histórico", if (store.liveMode) "Amostras ESP32 persistidas no celular" else "Amostras simuladas persistidas no celular") }
+        item { PageTitle("Histórico", if (store.liveMode) "${store.selectedEnvironment?.name ?: "ESP32"} · amostras persistidas" else "Amostras simuladas persistidas no celular") }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Metric.entries.forEach { metric ->
@@ -415,6 +433,9 @@ private fun EventCard(event: AlertEvent, store: DemoStore, compact: Boolean = fa
                 Text(timeOf(event.time), color = Muted, fontSize = 11.sp)
             }
             Text(event.detail, color = Muted, fontSize = 12.sp)
+            event.deviceId?.let { id -> store.environments[id]?.let { environment ->
+                Text("${environmentIcon(environment.icon)} ${environment.name} · $id", color = Ice, fontSize = 11.sp)
+            } }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusPill(if (event.resolved) "RESOLVIDO" else "ABERTO",
                     if (event.resolved) Ice else tint)
@@ -603,6 +624,8 @@ private fun ToggleRow(label: String, checked: Boolean, onChanged: (Boolean) -> U
 @Composable
 private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
     val context = LocalContext.current
+    var editingEnvironment by remember { mutableStateOf<EnvironmentProfile?>(null) }
+    var showEnvironmentEditor by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { DemoCentral.refreshUrls() }
     LazyColumn(modifier, contentPadding = PaddingValues(18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -647,10 +670,24 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("Winterhold MQTT", DemoCentral.mqttSecret))
                     }) { Text("Copiar chave MQTT") }
-                    if (store.lastSeen.isEmpty()) Text("Nenhum ESP32 identificado ainda.", color = Muted, fontSize = 12.sp)
-                    store.lastSeen.keys.sorted().forEach { id ->
-                        FilterChip(selected = store.selectedDeviceId == id, onClick = { store.selectedDeviceId = id },
-                            label = { Text("$id · ${if (store.now - (store.lastSeen[id] ?: 0L) in 0..15_000L) "online" else "sem sinal"}") })
+                    Text("Cada ID MQTT corresponde a um ambiente. Cadastre antes da primeira leitura ou personalize um ESP detectado.", color = Muted, fontSize = 12.sp)
+                    OutlinedButton(onClick = { editingEnvironment = null; showEnvironmentEditor = true }) {
+                        Icon(Icons.Outlined.Add, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Adicionar ambiente")
+                    }
+                    if (store.environments.isEmpty()) Text("Nenhum ambiente cadastrado ainda.", color = Muted, fontSize = 12.sp)
+                    store.environments.values.sortedBy { it.name }.forEach { profile ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            FilterChip(selected = store.selectedDeviceId == profile.deviceId,
+                                onClick = { store.selectedDeviceId = profile.deviceId; store.liveMode = true },
+                                label = { Text("${environmentIcon(profile.icon)} ${profile.name}") })
+                            Spacer(Modifier.weight(1f))
+                            TextButton(onClick = { editingEnvironment = profile; showEnvironmentEditor = true }) { Text("Editar") }
+                        }
+                        Text("${profile.deviceId} · ${if (store.lastSeen[profile.deviceId]?.let { store.now - it in 0..15_000L } == true) "online" else "aguardando ESP"} · " +
+                            "${profile.temperatureMin.toInt()}–${profile.temperatureMax.toInt()} °C · ${profile.humidityMin.toInt()}–${profile.humidityMax.toInt()}% · ${profile.voltageMin.toInt()}–${profile.voltageMax.toInt()} V",
+                            color = Muted, fontSize = 11.sp)
                     }
                 }
             }
@@ -670,7 +707,7 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
                 }
             }
         }
-        item { SectionTitle("Limiares de exemplo") }
+        item { SectionTitle("Limiares do modo demo") }
         item {
             PanelCard {
                 Column {
@@ -688,7 +725,7 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
                     }
                     val low = store.nominalVoltage * (1 - store.voltageTolerance / 100)
                     val high = store.nominalVoltage * (1 + store.voltageTolerance / 100)
-                    Text("Faixa: ${low.toInt()}–${high.toInt()} V. Novas leituras reais são avaliadas; amostras antigas não são reavaliadas.",
+                    Text("Faixa demo: ${low.toInt()}–${high.toInt()} V. Os alertas reais usam os limites individuais de cada ambiente.",
                         color = Muted, fontSize = 12.sp)
                 }
             }
@@ -722,9 +759,73 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
                 }
             }
         }
-        item { Text("Winterhold · 0.3 · medições locais persistidas no celular.",
+        item { Text("Winterhold · 0.4 · ambientes e medições persistidos no celular.",
             color = Muted, fontSize = 11.sp) }
     }
+    if (showEnvironmentEditor) EnvironmentEditor(editingEnvironment,
+        onDismiss = { showEnvironmentEditor = false },
+        onSave = { profile ->
+            store.saveEnvironment(profile)
+            store.selectedDeviceId = profile.deviceId
+            store.liveMode = true
+            showEnvironmentEditor = false
+        })
+}
+
+@Composable
+private fun EnvironmentEditor(profile: EnvironmentProfile?, onDismiss: () -> Unit,
+                              onSave: (EnvironmentProfile) -> Unit) {
+    var id by remember(profile?.deviceId) { mutableStateOf(profile?.deviceId ?: "") }
+    var name by remember(profile?.deviceId) { mutableStateOf(profile?.name ?: "") }
+    var icon by remember(profile?.deviceId) { mutableStateOf(profile?.icon ?: "snow") }
+    var temperatureMin by remember(profile?.deviceId) { mutableStateOf((profile?.temperatureMin ?: 18f).toString()) }
+    var temperatureMax by remember(profile?.deviceId) { mutableStateOf((profile?.temperatureMax ?: 26f).toString()) }
+    var humidityMin by remember(profile?.deviceId) { mutableStateOf((profile?.humidityMin ?: 30f).toString()) }
+    var humidityMax by remember(profile?.deviceId) { mutableStateOf((profile?.humidityMax ?: 70f).toString()) }
+    var voltageMin by remember(profile?.deviceId) { mutableStateOf((profile?.voltageMin ?: 198f).toString()) }
+    var voltageMax by remember(profile?.deviceId) { mutableStateOf((profile?.voltageMax ?: 242f).toString()) }
+    var error by remember(profile?.deviceId) { mutableStateOf<String?>(null) }
+    @Composable fun range(label: String, unit: String, minimum: String, onMinimum: (String) -> Unit,
+                          maximum: String, onMaximum: (String) -> Unit) {
+        Text("$label ($unit)", color = Muted, fontSize = 12.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(minimum, onMinimum, label = { Text("Mínimo") }, singleLine = true, modifier = Modifier.weight(1f))
+            OutlinedTextField(maximum, onMaximum, label = { Text("Máximo") }, singleLine = true, modifier = Modifier.weight(1f))
+        }
+    }
+    AlertDialog(onDismissRequest = onDismiss,
+        title = { Text(if (profile == null) "Novo ambiente" else "Editar ambiente") },
+        text = {
+            Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(id, { id = it }, label = { Text("DEVICE_ID do firmware") },
+                    enabled = profile == null, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(name, { name = it }, label = { Text("Nome do ambiente") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text("Ícone", color = Muted, fontSize = 12.sp)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(EnvironmentProfile.icons) { choice ->
+                        FilterChip(selected = icon == choice, onClick = { icon = choice },
+                            label = { Text(environmentIcon(choice)) })
+                    }
+                }
+                range("Temperatura", "°C", temperatureMin, { temperatureMin = it }, temperatureMax, { temperatureMax = it })
+                range("Umidade", "%", humidityMin, { humidityMin = it }, humidityMax, { humidityMax = it })
+                range("Tensão", "V", voltageMin, { voltageMin = it }, voltageMax, { voltageMax = it })
+                error?.let { Text(it, color = Red, fontSize = 12.sp) }
+            }
+        },
+        confirmButton = { TextButton(onClick = {
+            fun number(value: String) = value.replace(',', '.').toFloatOrNull() ?: Float.NaN
+            val result = runCatching {
+                EnvironmentProfile(id, name.trim(), icon,
+                    number(temperatureMin), number(temperatureMax), number(humidityMin),
+                    number(humidityMax), number(voltageMin), number(voltageMax)).validated()
+            }
+            result.onSuccess { runCatching { onSave(it) }.onFailure { failure -> error = failure.message } }
+                .onFailure { failure -> error = failure.message }
+        }) { Text("Salvar") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
 }
 
 @Composable

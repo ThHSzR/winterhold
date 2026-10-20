@@ -45,7 +45,8 @@ data class AlertEvent(
     val detail: String,
     val severity: Severity,
     val resolved: Boolean = false,
-    val simulated: Boolean = true
+    val simulated: Boolean = true,
+    val deviceId: String? = null
 )
 
 data class DemoContact(
@@ -57,12 +58,50 @@ data class DemoContact(
     val active: Boolean = true
 )
 
+/** Stable ESP id plus the user-facing environment and its alert interval. */
+data class EnvironmentProfile(
+    val deviceId: String,
+    val name: String,
+    val icon: String = "snow",
+    val temperatureMin: Float = 18f,
+    val temperatureMax: Float = 26f,
+    val humidityMin: Float = 30f,
+    val humidityMax: Float = 70f,
+    val voltageMin: Float = 198f,
+    val voltageMax: Float = 242f
+) {
+    companion object {
+        val icons = listOf("snow", "classroom", "lab", "office", "server")
+        val idPattern = Regex("[A-Za-z0-9_-]{1,40}")
+    }
+
+    fun validated(): EnvironmentProfile {
+        require(deviceId.matches(idPattern)) { "ID do ESP inválido" }
+        require(name.trim() == name && name.length in 1..60) { "Nome do ambiente inválido" }
+        require(icon in icons) { "Ícone inválido" }
+        require(temperatureMin.isFinite() && temperatureMax.isFinite() && temperatureMin in -40f..85f &&
+            temperatureMax in -40f..85f && temperatureMin < temperatureMax) { "Faixa de temperatura inválida" }
+        require(humidityMin.isFinite() && humidityMax.isFinite() && humidityMin in 0f..100f &&
+            humidityMax in 0f..100f && humidityMin < humidityMax) { "Faixa de umidade inválida" }
+        require(voltageMin.isFinite() && voltageMax.isFinite() && voltageMin in 0f..300f &&
+            voltageMax in 0f..300f && voltageMin < voltageMax) { "Faixa de tensão inválida" }
+        return this
+    }
+
+    fun bounds(metric: Metric): Pair<Float, Float> = when (metric) {
+        Metric.TEMPERATURE -> temperatureMin to temperatureMax
+        Metric.HUMIDITY -> humidityMin to humidityMax
+        Metric.VOLTAGE -> voltageMin to voltageMax
+    }
+}
+
 /** Shared central state; demo and ESP readings are kept separate. Mutate on the main thread. */
 class DemoStore {
     private var tick = 0
     val readings = mutableStateListOf<Reading>()
     val liveReadings = mutableStateListOf<Reading>()
     val lastSeen = mutableStateMapOf<String, Long>()
+    val environments = mutableStateMapOf<String, EnvironmentProfile>()
     val events = mutableStateListOf<AlertEvent>()
     val contacts = mutableStateListOf<DemoContact>()
 
@@ -140,50 +179,66 @@ class DemoStore {
     val deviceOnline: Boolean get() = selectedDeviceId?.let { id ->
         lastSeen[id]?.let { now - it in 0..15_000L }
     } ?: false
+    val selectedEnvironment: EnvironmentProfile? get() = selectedDeviceId?.let(environments::get)
+
+    fun saveEnvironment(profile: EnvironmentProfile) {
+        profile.validated()
+        require(profile.deviceId in environments || environments.size < 32) { "Limite de ambientes atingido" }
+        environments[profile.deviceId] = profile
+        if (selectedDeviceId == null) selectedDeviceId = profile.deviceId
+    }
+
+    private fun defaultEnvironment(id: String) = EnvironmentProfile(id, id,
+        temperatureMax = temperatureLimit, humidityMax = humidityLimit,
+        voltageMin = nominalVoltage * (1 - voltageTolerance / 100),
+        voltageMax = nominalVoltage * (1 + voltageTolerance / 100))
 
     fun heartbeat(at: Long = System.currentTimeMillis()) {
         now = at
         lastSeen.forEach { (id, time) ->
-            if (at - time > 15_000 && disconnected.add(id)) addEvent(null,
+            if (at - time > 15_000 && disconnected.add(id)) addEvent(id, null,
                 "Dispositivo sem comunicação", "$id · última leitura há mais de 15 segundos", Severity.CRITICAL)
         }
     }
 
     fun ingest(reading: Reading) {
         val id = requireNotNull(reading.deviceId)
+        if (id !in environments) saveEnvironment(defaultEnvironment(id))
         require(id in lastSeen || lastSeen.size < 32) { "Limite de dispositivos atingido" }
         if (selectedDeviceId == null) selectedDeviceId = id
-        if (disconnected.remove(id)) addEvent(null, "Comunicação restabelecida", "$id · MQTT ativo", Severity.INFO, true)
+        if (disconnected.remove(id)) addEvent(id, null, "Comunicação restabelecida", "$id · MQTT ativo", Severity.INFO, true)
         lastSeen[id] = reading.time
         now = reading.time
         liveReadings.add(0, reading)
         val positions = liveReadings.indices.filter { liveReadings[it].deviceId == id }
         if (positions.size > 60) liveReadings.removeAt(positions.last())
-        checkLimit(id, Metric.TEMPERATURE, reading.temperature, reading.temperature?.let { it > temperatureLimit },
-            "${reading.temperature} °C · limite ${temperatureLimit.toInt()} °C")
-        checkLimit(id, Metric.HUMIDITY, reading.humidity, reading.humidity?.let { it > humidityLimit },
-            "${reading.humidity} % · limite ${humidityLimit.toInt()} %")
-        val low = nominalVoltage * (1 - voltageTolerance / 100)
-        val high = nominalVoltage * (1 + voltageTolerance / 100)
-        checkLimit(id, Metric.VOLTAGE, reading.voltage, reading.voltage?.let { it < low || it > high },
-            "${reading.voltage} V · faixa ${low.toInt()}–${high.toInt()} V")
-    }
-
-    private fun checkLimit(id: String, metric: Metric, value: Float?, violated: Boolean?, detail: String) {
-        if (value == null || violated == null) return
-        val key = "$id:${metric.name}"
-        if (violated && activeViolations.add(key)) addEvent(metric, "${metric.label} fora do limite", "$id · $detail",
-            if (metric == Metric.VOLTAGE) Severity.CRITICAL else Severity.WARNING)
-        if (!violated && activeViolations.remove(key)) {
-            events.indexOfFirst { !it.simulated && !it.resolved && it.metric == metric && it.detail.startsWith("$id ·") }
-                .takeIf { it >= 0 }?.let { events[it] = events[it].copy(resolved = true) }
-            addEvent(metric, "${metric.label} normalizada", "$id · $detail", Severity.INFO, true)
+        val profile = environments.getValue(id)
+        Metric.entries.forEach { metric ->
+            val (low, high) = profile.bounds(metric)
+            checkLimit(id, metric, reading.value(metric), low, high)
         }
     }
 
-    private fun addEvent(metric: Metric?, title: String, detail: String, severity: Severity,
+    private fun checkLimit(id: String, metric: Metric, value: Float?, low: Float, high: Float) {
+        if (value == null) return
+        val key = "$id:${metric.name}"
+        val violation = when { value < low -> "min"; value > high -> "max"; else -> null }
+        val previous = activeViolations.firstOrNull { it.startsWith("$key:") }
+        if (previous != null && previous != "$key:$violation") {
+            activeViolations.remove(previous)
+            events.indexOfFirst { !it.simulated && !it.resolved && it.metric == metric && it.detail.startsWith("$id ·") }
+                .takeIf { it >= 0 }?.let { events[it] = events[it].copy(resolved = true) }
+            if (violation == null) addEvent(id, metric, "${metric.label} normalizada", "$id · $value ${metric.unit} · faixa $low–$high ${metric.unit}", Severity.INFO, true)
+        }
+        if (violation != null && activeViolations.add("$key:$violation"))
+            addEvent(id, metric, "${metric.label} ${if (violation == "min") "abaixo do mínimo" else "acima do máximo"}",
+                "$id · $value ${metric.unit} · faixa $low–$high ${metric.unit}",
+                if (metric == Metric.VOLTAGE) Severity.CRITICAL else Severity.WARNING)
+    }
+
+    private fun addEvent(deviceId: String, metric: Metric?, title: String, detail: String, severity: Severity,
                          resolved: Boolean = false) {
-        events.add(0, AlertEvent(time = now, metric = metric, title = title, detail = detail,
+        events.add(0, AlertEvent(time = now, deviceId = deviceId, metric = metric, title = title, detail = detail,
             severity = severity, resolved = resolved, simulated = false))
         if (events.size > 500) events.removeAt(events.lastIndex)
     }
@@ -245,7 +300,7 @@ class DemoStore {
         }
 
     internal fun savedJson(): String = JSONObject()
-        .put("version", 2).put("tick", tick)
+        .put("version", 3).put("tick", tick)
         .put("readings", JSONArray(readings.map { JSONObject()
             .put("time", it.time).put("temperature", it.temperature)
             .put("humidity", it.humidity).put("voltage", it.voltage) }))
@@ -253,11 +308,17 @@ class DemoStore {
             .put("time", it.time).put("temperature", it.temperature).put("humidity", it.humidity)
             .put("voltage", it.voltage).put("deviceId", it.deviceId) }))
         .put("lastSeen", JSONObject(lastSeen.toMap()))
+        .put("environments", JSONArray(environments.values.sortedBy { it.deviceId }.map { profile -> JSONObject()
+            .put("deviceId", profile.deviceId).put("name", profile.name).put("icon", profile.icon)
+            .put("temperatureMin", profile.temperatureMin).put("temperatureMax", profile.temperatureMax)
+            .put("humidityMin", profile.humidityMin).put("humidityMax", profile.humidityMax)
+            .put("voltageMin", profile.voltageMin).put("voltageMax", profile.voltageMax) }))
         .put("liveMode", liveMode).put("selectedDeviceId", selectedDeviceId)
         .put("events", JSONArray(events.take(500).map { JSONObject()
             .put("id", it.id).put("time", it.time).put("metric", it.metric?.name ?: JSONObject.NULL)
             .put("title", it.title).put("detail", it.detail).put("severity", it.severity.name)
-            .put("resolved", it.resolved).put("simulated", it.simulated) }))
+            .put("resolved", it.resolved).put("simulated", it.simulated)
+            .put("deviceId", it.deviceId ?: JSONObject.NULL) }))
         .put("contacts", JSONArray(contacts.map { JSONObject()
             .put("id", it.id).put("name", it.name).put("role", it.role)
             .put("metrics", JSONArray(it.metrics.map { metric -> metric.name }))
@@ -273,7 +334,7 @@ class DemoStore {
     internal fun restoreJson(json: String) {
         val root = JSONObject(json)
         val version = root.getInt("version")
-        require(version in 1..2) { "Versão de estado desconhecida" }
+        require(version in 1..3) { "Versão de estado desconhecida" }
         val savedTick = root.getInt("tick").also { require(it >= 0) }
         fun optionalFloat(json: JSONObject, key: String): Float? = if (json.isNull(key)) null else
             json.getDouble(key).toFloat().also { require(it.isFinite()) }
@@ -281,25 +342,26 @@ class DemoStore {
             Reading(it.getLong("time"), optionalFloat(it, "temperature"),
                 optionalFloat(it, "humidity"), optionalFloat(it, "voltage"))
         }.also { require(it.isNotEmpty() && it.size <= 60) }
-        val savedLive = if (version == 2) root.getJSONArray("liveReadings").objects().map {
+        val savedLive = if (version >= 2) root.getJSONArray("liveReadings").objects().map {
             val id = it.getString("deviceId").also { id -> require(id.matches(Regex("[A-Za-z0-9_-]{1,40}"))) }
             Reading(it.getLong("time"), optionalFloat(it, "temperature"), optionalFloat(it, "humidity"),
                 optionalFloat(it, "voltage"), id)
         }.also { require(it.size <= 1_920) } else emptyList()
-        val savedSeen = if (version == 2) root.getJSONObject("lastSeen").let { seen ->
+        val savedSeen = if (version >= 2) root.getJSONObject("lastSeen").let { seen ->
             seen.keys().asSequence().associateWith { id ->
                 require(id.matches(Regex("[A-Za-z0-9_-]{1,40}")))
                 seen.getLong(id).also { require(it >= 0) }
             }.also { require(it.size <= 32) }
         } else emptyMap()
-        val selected = if (version == 2 && !root.isNull("selectedDeviceId")) root.getString("selectedDeviceId") else null
-        require(selected == null || selected in savedSeen)
+        val selected = if (version >= 2 && !root.isNull("selectedDeviceId")) root.getString("selectedDeviceId") else null
         val savedEvents = root.getJSONArray("events").objects().map {
             AlertEvent(id = it.getString("id"), time = it.getLong("time"),
                 metric = if (it.isNull("metric")) null else Metric.valueOf(it.getString("metric")),
                 title = it.getString("title"), detail = it.getString("detail"),
             severity = Severity.valueOf(it.getString("severity")), resolved = it.getBoolean("resolved"),
-            simulated = it.optBoolean("simulated", true))
+            simulated = it.optBoolean("simulated", true),
+            deviceId = if (version >= 3 && !it.isNull("deviceId")) it.getString("deviceId") else
+                if (it.optBoolean("simulated", true)) null else it.getString("detail").substringBefore(" ·"))
         }.also { require(it.size <= 500) }
         val savedContacts = root.getJSONArray("contacts").objects().map {
             DemoContact(id = it.getString("id"), name = it.getString("name"), role = it.getString("role"),
@@ -311,18 +373,33 @@ class DemoStore {
         val humidity = root.getDouble("humidityLimit").toFloat().also { require(it in 40f..90f) }
         val nominal = root.getDouble("nominalVoltage").toFloat().also { require(it in 100f..250f) }
         val tolerance = root.getDouble("voltageTolerance").toFloat().also { require(it in 2f..20f) }
+        val savedProfiles = if (version >= 3) root.getJSONArray("environments").objects().map { item ->
+            EnvironmentProfile(item.getString("deviceId"), item.getString("name"), item.getString("icon"),
+                item.getDouble("temperatureMin").toFloat(), item.getDouble("temperatureMax").toFloat(),
+                item.getDouble("humidityMin").toFloat(), item.getDouble("humidityMax").toFloat(),
+                item.getDouble("voltageMin").toFloat(), item.getDouble("voltageMax").toFloat()).validated()
+        } else savedSeen.keys.map { id -> EnvironmentProfile(id, id, temperatureMax = temperature,
+            humidityMax = humidity, voltageMin = nominal * (1 - tolerance / 100),
+            voltageMax = nominal * (1 + tolerance / 100)).validated() }
+        require(savedProfiles.size <= 32 && savedProfiles.map { it.deviceId }.distinct().size == savedProfiles.size)
+        require(savedSeen.keys.all { id -> savedProfiles.any { it.deviceId == id } })
+        require(selected == null || savedProfiles.any { it.deviceId == selected })
         val running = root.getBoolean("simulationRunning")
         val offline = root.getBoolean("offlineDemo")
         val channels = root.getJSONArray("enabledChannels").strings().map(Channel::valueOf)
         readings.clear(); readings.addAll(savedReadings)
         liveReadings.clear(); liveReadings.addAll(savedLive)
         lastSeen.clear(); lastSeen.putAll(savedSeen)
-        liveMode = version == 2 && root.getBoolean("liveMode")
+        environments.clear(); savedProfiles.forEach { environments[it.deviceId] = it }
+        liveMode = version >= 2 && root.getBoolean("liveMode")
         selectedDeviceId = selected
         activeViolations.clear(); disconnected.clear()
         savedEvents.filter { !it.simulated && !it.resolved && it.metric != null }.forEach { event ->
             event.detail.substringBefore(" ·").takeIf { it in savedSeen }?.let { id ->
-                activeViolations.add("$id:${event.metric!!.name}")
+                val bound = environments[id]?.bounds(event.metric!!)
+                val reading = savedLive.firstOrNull { it.deviceId == id }?.value(event.metric!!)
+                val side = if (reading != null && bound != null && reading < bound.first) "min" else "max"
+                activeViolations.add("$id:${event.metric!!.name}:$side")
             }
         }
         events.clear(); events.addAll(savedEvents)

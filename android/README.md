@@ -11,7 +11,8 @@ Baixe o [APK de debug da main](../dist/winterhold-demo-debug.apk), instale e abr
 1. Conecte celular e ESP32 à mesma rede Wi-Fi. Abra o aplicativo; conceda as solicitações de notificação e bateria necessárias para uso contínuo.
 2. Em **Ajustes → ESP32 / MQTT**, confira que a porta `1883` está ativa, copie a chave MQTT do aparelho e anote o IP do celular em **Acesso web pelo aplicativo**.
 3. No `backend/include/config.h`, preencha `WIFI_SSID`, `WIFI_PASSWORD`, `MQTT_HOST` com o IP do celular e `MQTT_PASSWORD` com a chave. Mantenha `MQTT_USER` como `winterhold`. Defina um `DEVICE_ID` único por ESP32. Não publique senhas ou chaves em commits.
-4. Compile/grave conforme [backend/README.md](../backend/README.md). Ative **Mostrar leituras reais** no APK. Se houver vários dispositivos, selecione um nos Ajustes.
+4. Em **Ajustes → ESP32 / MQTT → Adicionar ambiente**, cadastre o mesmo `DEVICE_ID` do firmware, nome e ícone da sala e as faixas mínima/máxima de temperatura, umidade e tensão. Repita para os demais ESPs. O cadastro também é criado automaticamente quando um ESP novo publica sua primeira amostra; personalize-o depois.
+5. Compile/grave conforme [backend/README.md](../backend/README.md). Ative **Mostrar leituras reais** no APK e selecione o ambiente na tela inicial ou nos Ajustes.
 
 A central aceita MQTT 3.1.1 QoS 0, `CONNECT`, `PUBLISH`, `PINGREQ` e `DISCONNECT`, com até oito conexões simultâneas. Ela não é um broker MQTT completo e não implementa assinaturas. O tópico deve ser `winterhold/<DEVICE_ID>/leituras`, e o JSON deve conter `device_id` correspondente e os campos `temperatura_c`, `umidade_pct`, `tensao_rms_v` numéricos ou nulos. O horário de recebimento é usado no histórico.
 
@@ -21,7 +22,7 @@ Acesse `http://IP_DO_CELULAR:8790/` em outro dispositivo da mesma rede local. A 
 
 O serviço Android em primeiro plano continua com a tela fechada, tenta recuperar após reboot/desbloqueio e salva o estado em arquivo privado atômico `demo-state.json`. Use **Parar central** para fechar as portas `8790` e `1883`, ou **Retomar central** para reabri-las. Forçar parada pelo sistema impede retomada até abrir o app novamente. Otimizações de bateria do fabricante e falta de rede podem interromper a coleta; mantenha o celular alimentado na bancada.
 
-Amostras e eventos reais são separados dos fictícios. O histórico guarda até 60 amostras por ESP32 (máximo 32 dispositivos), e eventos são limitados a 500 na persistência. Temperatura e umidade acima dos limites, tensão fora da faixa e perda de sinal por mais de 15 segundos geram eventos locais; recuperação também é registrada. Valores nulos aparecem como `—` e não geram alerta para aquela grandeza. Alterar limiar só afeta novas amostras. SMS, e-mail e WhatsApp são prévia visual; nenhum aviso externo é enviado.
+Amostras e eventos reais são separados dos fictícios. O histórico guarda até 60 amostras por ESP32 (máximo 32 ambientes), e eventos são limitados a 500 na persistência. Cada ambiente tem nome, ícone e uma faixa de mínimo/máximo independente para as três métricas. Leituras fora da faixa e perda de sinal por mais de 15 segundos geram eventos locais identificados pelo `DEVICE_ID`; recuperação também é registrada. Valores nulos aparecem como `—` e não geram alerta para aquela grandeza. Alterar um limite só afeta novas amostras daquele ambiente. Estados salvos da versão anterior são migrados sem perder leituras e ajustes. SMS, e-mail e WhatsApp são prévia visual; nenhum aviso externo é enviado.
 
 ## Verificar no aparelho
 

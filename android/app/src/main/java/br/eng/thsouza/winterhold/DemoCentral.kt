@@ -311,7 +311,8 @@ internal class DemoHttpServer(
                 .put("metric", it.metric?.name?.lowercase(Locale.ROOT) ?: JSONObject.NULL)
                 .put("title", it.title).put("detail", it.detail)
                 .put("severity", it.severity.name.lowercase(Locale.ROOT))
-                .put("resolved", it.resolved).put("simulated", it.simulated) }))
+                .put("resolved", it.resolved).put("simulated", it.simulated)
+                .put("deviceId", it.deviceId ?: JSONObject.NULL) }))
             .put("contacts", JSONArray(store.contacts.map { JSONObject()
                 .put("id", it.id).put("name", it.name).put("role", it.role)
                 .put("metrics", JSONArray(it.metrics.map { m -> m.name.lowercase(Locale.ROOT) }))
@@ -324,9 +325,14 @@ internal class DemoHttpServer(
             .put("running", store.simulationRunning).put("offline", store.offlineDemo)
             .put("mode", if (store.liveMode) "esp" else "demo")
             .put("selectedDeviceId", store.selectedDeviceId ?: JSONObject.NULL)
-            .put("devices", JSONArray(store.lastSeen.keys.sorted().map { id -> JSONObject()
-                .put("id", id).put("lastSeen", store.lastSeen[id])
-                .put("online", store.now - (store.lastSeen[id] ?: 0L) in 0..15_000L) }))
+            .put("devices", JSONArray(store.environments.values.sortedBy { it.name }.map { profile -> JSONObject()
+                .put("id", profile.deviceId).put("name", profile.name).put("icon", profile.icon)
+                .put("lastSeen", store.lastSeen[profile.deviceId] ?: JSONObject.NULL)
+                .put("online", store.lastSeen[profile.deviceId]?.let { store.now - it in 0..15_000L } ?: false)
+                .put("limits", JSONObject()
+                    .put("temperatureMin", profile.temperatureMin).put("temperatureMax", profile.temperatureMax)
+                    .put("humidityMin", profile.humidityMin).put("humidityMax", profile.humidityMax)
+                    .put("voltageMin", profile.voltageMin).put("voltageMax", profile.voltageMax)) }))
             .put("mqttAvailable", DemoCentral.mqttStatus.startsWith("Recebendo"))
             .put("deviceHealth", health)
     }
@@ -339,8 +345,19 @@ internal class DemoHttpServer(
             }
             "selectedDevice" -> {
                 val id = action.getString("value")
-                require(id in store.lastSeen) { "Dispositivo desconhecido" }
+                require(id in store.environments) { "Ambiente desconhecido" }
                 store.selectedDeviceId = id
+            }
+            "saveEnvironment" -> {
+                val profile = action.getJSONObject("environment")
+                val limits = profile.getJSONObject("limits")
+                fun number(key: String) = limits.optDouble(key, Double.NaN).toFloat()
+                store.saveEnvironment(EnvironmentProfile(
+                    deviceId = profile.optString("id"), name = profile.optString("name").trim(),
+                    icon = profile.optString("icon"),
+                    temperatureMin = number("temperatureMin"), temperatureMax = number("temperatureMax"),
+                    humidityMin = number("humidityMin"), humidityMax = number("humidityMax"),
+                    voltageMin = number("voltageMin"), voltageMax = number("voltageMax")))
             }
             "simulateAlert" -> store.simulateAlert(metric(action.getString("metric")))
             "resolveAlert" -> store.resolveAlert(action.getString("id"))
