@@ -2,52 +2,30 @@
 
 **[Baixar APK Android diretamente](https://raw.githubusercontent.com/ThHSzR/winterhold/main/dist/winterhold-demo-debug.apk)** · [Instalação e execução](android/README.md)
 
-O celular Android é a central do Winterhold. Ele recebe medições de ESP32 por MQTT, salva o histórico e os eventos localmente, avalia limiares e serve a mesma interface pela web na rede local. A tela do aplicativo e o navegador usam o mesmo estado. O modo demo do APK inicia desligado; a prévia Node continua independente e fictícia.
-
-## Arquitetura
+O Android é a central: recebe ESP32 por MQTT, avalia faixas por ambiente, mantém histórico e alertas e serve a interface web em `http://IP_DO_CELULAR:8790/`. O navegador usa o mesmo estado e oferece os ajustes do aplicativo. **Somente a gestão de usuários e chaves de acesso web fica no celular.** Sem ESP conectado, ative a demonstração no app ou na web; ela oferece cinco ambientes fictícios independentes, leituras ajustáveis e testes explícitos de notificação.
 
 ```mermaid
 flowchart LR
-    DHT["DHT22"] --> ESP["ESP32"]
-    ZMPT["ZMPT101B"] --> ESP
-    ESP -->|"MQTT / Wi-Fi"| APK["Celular Android · central"]
-    APK --> DB["Histórico e alertas locais"]
-    APK -->|"HTTP :8790 · chave"| WEB["Interface web"]
-    APK -->|"SMS / SMTP"| AVISOS["Destinatários"]
-    APK -->|"HTTPS"| META["WhatsApp Cloud API"]
+    ESP[ESP32] -->|MQTT :1883| APK[Android · central]
+    APK -->|HTTP :8790| WEB[Web remota]
+    APK -->|SMS e SMTP| DEST[Destinatários]
+    APK -->|HTTPS · alertas| NODE[Ponte Node · Baileys]
+    NODE --> WA[WhatsApp]
 ```
 
-O firmware publica `winterhold/<DEVICE_ID>/leituras` em MQTT 3.1.1, QoS 0, a cada segundo. A central escuta publicadores na porta `1883` com usuário `winterhold` e chave gerada no aparelho. No aplicativo, **Ajustes → ESP32 / MQTT** mostra essa chave; ela não aparece na API web. Configure o IP do celular e a chave em `backend/include/config.h` antes de compilar o ESP32. Use uma rede local confiável. Detalhes do firmware: [backend/README.md](backend/README.md).
+O ESP publica `winterhold/<DEVICE_ID>/leituras` em MQTT 3.1.1 com usuário `winterhold` e chave gerada no aparelho. Cada ambiente físico tem nome, ícone, favorito e faixas mínimas e máximas de temperatura, umidade e tensão. A central guarda até 60 leituras por ESP (32 ambientes) e 500 eventos. A web exibe só a saúde do próprio celular; não consulta outros serviços do homelab. Veja [firmware e payload](backend/README.md).
 
-```json
-{
-  "device_id": "sala-01",
-  "timestamp": "2026-10-20T13:00:00Z",
-  "temperatura_c": 24.5,
-  "umidade_pct": 58.0,
-  "tensao_rms_v": null
-}
-```
+## Começar
 
-O campo `timestamp` pode ser nulo quando o ESP não sincronizou o horário. A central usa o horário de recebimento do celular. Cada medição pode ser nula quando inválida; o módulo de tensão publica `null` até ser calibrado. A central mantém até 60 leituras por dispositivo identificado (máximo 32 ambientes) e 500 eventos ao salvar o estado.
+1. Instale o [APK](https://raw.githubusercontent.com/ThHSzR/winterhold/main/dist/winterhold-demo-debug.apk) no Android 8+. Abra o aplicativo e conceda notificações e operação contínua quando necessário.
+2. Em **Ajustes → Usuários de acesso web**, copie a chave do administrador ou crie uma chave por pessoa. Abra o endereço indicado em **Ajustes → Web no celular** a partir da mesma rede e informe sua chave.
+3. Em **Ajustes → ESP32 / MQTT** (app ou web), copie a chave MQTT. Configure o IP do celular, credenciais e `DEVICE_ID` em `backend/include/config.h`; grave o firmware. Em **Ambientes**, configure as faixas e fixe favoritos.
+4. Para conhecer a interface sem sensores, ative **Ajustes → Demonstração**. Em **Ambientes**, selecione um dos cinco espaços, ajuste uma leitura fictícia e edite as faixas. **Alertas → Testar notificações** pode enviar SMS, e-mail e WhatsApp reais aos destinos que você configurar; eventos fictícios automáticos não enviam mensagens.
 
-## Vários ambientes
+A rede local usa HTTP sem criptografia. Para acesso fora dela, use VPN ou proxy HTTPS. Credenciais de e-mail e da ponte WhatsApp são cifradas pelo Android Keystore e nunca retornam na API; a chave MQTT aparece nos ajustes web para usuários autenticados. Rotacione ou desative as chaves web pelo celular.
 
-Cada ESP tem um `DEVICE_ID` único e corresponde a um ambiente físico. Na aba **Ambientes → Adicionar ambiente**, cadastre esse ID, um nome como “Laboratório 02”, escolha um dos ícones e configure mínimos e máximos de temperatura, umidade e tensão. Também é possível editar um ESP detectado automaticamente. O aplicativo e a web compartilham esses cadastros e permitem selecionar a sala exibida; eventos indicam de qual ambiente vieram. Marque a estrela para fixar o ambiente no Início. Cada nova amostra é comparada apenas com a faixa do seu ambiente, e uma perda de sinal por mais de 15 segundos gera evento para o ESP correspondente. Alterações de limites só afetam leituras futuras. Configurações e leituras da versão anterior são migradas ao atualizar o aplicativo.
+## Notificações
 
-## Executar
+O aplicativo envia SMS pelo SIM, e-mail por SMTP TLS implícito na porta 465 e WhatsApp por uma [ponte Node com Baileys](backend/whatsapp/README.md). A ponte é **opcional e separada**: o APK continua sendo a única central e a única interface web remota, mas um processo Node precisa estar disponível para WhatsApp. Não depende de Termux nem de token Meta. É uma integração não oficial do WhatsApp; requer pareamento por QR e pode mudar com o protocolo. Os envios são reservados antes da chamada externa e não são repetidos automaticamente; `submitted` não comprova entrega no aparelho do destinatário. Veja o [guia Android](android/README.md).
 
-1. [Baixe o APK](https://raw.githubusercontent.com/ThHSzR/winterhold/main/dist/winterhold-demo-debug.apk) e instale no Android 8 ou superior. É um build de debug; uma instalação anterior com assinatura diferente pode precisar ser removida, o que apaga os dados locais.
-2. Abra o app e autorize notificações e operação em segundo plano. Em **Ajustes**, copie o endereço `http://IP_DO_CELULAR:8790/` e a **chave web**. Abra o endereço em outro dispositivo da mesma rede e informe a chave. Nenhum canal requer Termux, Node ou PM2.
-3. Em **Ajustes → ESP32 / MQTT** copie a chave MQTT; em **Ambientes** cadastre os IDs dos ESPs e configure e grave o [firmware](backend/README.md). O painel espera dados reais desde a primeira abertura.
-
-A web usa chave de acesso guardada somente no aparelho e na sessão do navegador. Como o transporte é HTTP na rede local, use VPN ou HTTPS ao expor externamente. Nenhum dado é puxado dos demais serviços do homelab. A saúde mostrada pela web é medida no celular Android. A prévia Node em [`web/`](web/README.md) é independente e usa dados fictícios.
-
-## Estado e limites
-
-- Recepção MQTT, histórico local persistido e eventos de limiar e comunicação funcionam na central Android. O ESP32 não reenvia amostras perdidas durante desconexão.
-- Alertas reais novos geram notificação local; destinatários configurados recebem SMS via SIM e, se houver SMTP TLS 465 configurado, e-mail. WhatsApp usa a API oficial da Meta diretamente do APK, após configurar conta Business, token e modelo aprovado. Envios têm registro local antes de chamar o canal e não são repetidos automaticamente. Eventos fictícios nunca disparam entregas. Não há comando de ligar ou desligar o ar-condicionado.
-- A medição AC exige calibração e validação elétrica supervisionada antes de ser considerada confiável. O sensor DHT22 é lido a cada dois segundos e pode repetir valor nas publicações de um segundo.
-- O histórico usa arquivo privado atômico no aplicativo, sem SQLite. Limpar dados ou desinstalar apaga leituras e configurações.
-
-Veja o [guia Android](android/README.md), o [guia web](web/README.md) e a [documentação do projeto](docs/).
+O histórico é um arquivo privado atômico do app. Limpar dados ou desinstalar apaga histórico e configurações. A medição AC requer calibração e validação elétrica supervisionada antes de ser considerada confiável. Não há comando infravermelho para ligar ou desligar o ar-condicionado.

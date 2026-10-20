@@ -1,6 +1,7 @@
 import {
   METRICS, CHANNELS, createDemoState, advance, simulateAlert,
-  setOffline, resolveAlert, addContact, toggleContactItem, routeAlert, health
+  setOffline, resolveAlert, addContact, toggleContactItem, routeAlert, health,
+  selectDemoDevice, setDemoReading
 } from './demo.js';
 
 const state = createDemoState();
@@ -120,8 +121,8 @@ const environmentName = id => {
   const profile = state.devices?.find(device => device.id === id);
   return profile ? `${environmentIcons[profile.icon] || '❄️'} ${profile.name}` : id;
 };
-const environmentChoices = () => backend === 'android' && state.mode === 'esp' ? `<div class="chip-row environment-choices" role="group" aria-label="Selecionar ambiente">${(state.devices || []).filter(device => device.favorite).map(device =>
-  `<button class="chip ${state.selectedDeviceId === device.id ? 'active' : ''}" data-action="selected-device" data-id="${escapeHtml(device.id)}" aria-pressed="${state.selectedDeviceId === device.id}">${escapeHtml(environmentName(device.id))}${device.online ? ' · online' : ''}</button>`).join('')}</div>` : '';
+const environmentChoices = () => `<div class="chip-row environment-choices" role="group" aria-label="Selecionar ambiente">${(state.devices || []).filter(device => device.favorite).map(device =>
+  `<button class="chip ${state.selectedDeviceId === device.id ? 'active' : ''}" data-action="selected-device" data-id="${escapeHtml(device.id)}" aria-pressed="${state.selectedDeviceId === device.id}">${escapeHtml(environmentName(device.id))}${device.online ? ' · online' : ''}</button>`).join('')}</div>`;
 const time = value => new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(value);
 const dateTime = value => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(value);
 const currentPage = () => {
@@ -162,27 +163,27 @@ function overview() {
   const live = backend === 'android' && state.mode === 'esp';
   const selected = state.devices?.find(device => device.id === state.selectedDeviceId);
   const status = live ? { label: selected?.online ? 'Online' : 'Sem sinal', tone: selected?.online ? 'normal' : 'offline' } : health(state);
-  const relevant = live ? state.events.filter(item => item.deviceId === state.selectedDeviceId) : state.events.filter(item => item.simulated);
+  const relevant = live ? state.events.filter(item => !item.simulated && item.deviceId === state.selectedDeviceId) : state.events.filter(item => item.simulated && (!item.deviceId || item.deviceId === state.selectedDeviceId));
   const rows = relevant.slice(0, 3).map(item => `<div class="event-row">
     ${eventIcon(item)}<div class="event-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></div>
     <span class="event-time">${time(item.time)}</span></div>`).join('');
   const device = state.deviceHealth;
-  return `${pageHead('PAINEL / AMBIENTE', 'Sua central', live ? `${escapeHtml(selected ? environmentName(selected.id) : 'Aguardando ESP32')} · ${escapeHtml(state.selectedDeviceId || '')}` : 'Sala 01 · Ambiente demonstrativo · leituras fictícias')}
+  return `${pageHead('PAINEL / AMBIENTE', 'Sua central', live ? `${escapeHtml(selected ? environmentName(selected.id) : 'Aguardando ESP32')} · ${escapeHtml(state.selectedDeviceId || '')}` : `${escapeHtml(environmentName(state.selectedDeviceId))} · demonstração fictícia`)}
     ${environmentChoices()}
     <div class="overview-grid">
       <section class="card hero" aria-label="Temperatura atual demonstrativa">
         <div class="hero-top"><span class="kicker">TEMPERATURA AMBIENTE</span>${pill(status.label, status.tone)}</div>
         <div class="hero-number">${decimal(latest.temperature)}<sup>°C</sup></div>
-        <div class="hero-caption">${live ? `Amostra ESP32 · faixa ${decimal(selected?.limits.temperatureMin)}–${decimal(selected?.limits.temperatureMax)} °C` : `Amostra simulada · limite ${state.limits.temperature} °C`}</div>
+        <div class="hero-caption">${live ? 'Amostra ESP32' : 'Amostra simulada'} · faixa ${decimal(selected?.limits.temperatureMin)}–${decimal(selected?.limits.temperatureMax)} °C</div>
         <div class="hero-chart">${chart(state.samples.slice(0, 18).map(s => s.temperature), true)}</div>
         <div class="hero-bottom flex-between"><span>${live ? 'Última amostra recebida' : 'Última amostra fictícia'}</span><strong>${latest.time ? time(latest.time) : '—'}</strong></div>
       </section>
       <div class="metric-stack">
-        ${metricCard('humidity', latest.humidity, live ? `${decimal(selected?.limits.humidityMin)}–${decimal(selected?.limits.humidityMax)}%` : `Limite ${state.limits.humidity}%`)}
-        ${metricCard('voltage', latest.voltage, live ? `${decimal(selected?.limits.voltageMin)}–${decimal(selected?.limits.voltageMax)} V` : `Nominal ${state.limits.nominalVoltage} V`)}
+        ${metricCard('humidity', latest.humidity, `${decimal(selected?.limits.humidityMin)}–${decimal(selected?.limits.humidityMax)}%`)}
+        ${metricCard('voltage', latest.voltage, `${decimal(selected?.limits.voltageMin)}–${decimal(selected?.limits.voltageMax)} V`)}
       </div>
     </div>
-    <div class="home-quick"><a class="btn secondary" href="#ambientes">Gerenciar ambientes →</a><a class="btn ghost" href="#alertas">Alertas abertos: ${state.events.filter(item => !item.resolved && !item.simulated).length}</a></div>
+    <div class="home-quick"><a class="btn secondary" href="#ambientes">Gerenciar ambientes →</a><a class="btn ghost" href="#alertas">Alertas abertos: ${state.events.filter(item => !item.resolved && item.simulated !== live).length}</a></div>
     <div class="below-grid">
       <div>${section('Central e dispositivo')}
         <section class="card card-pad status-list">
@@ -238,13 +239,14 @@ function alertCard(item) {
 function alertsPage() {
   const filters = [['all', 'Todos'], ['open', 'Abertos'], ['resolved', 'Resolvidos']]
     .map(([key, label]) => `<button class="chip ${alertFilter === key ? 'active' : ''}" data-action="alert-filter" data-filter="${key}" aria-pressed="${alertFilter === key}">${label}</button>`).join('');
-  const shown = state.events.filter(item => backend !== 'android' || !item.simulated).filter(item => alertFilter === 'all' || (alertFilter === 'open' ? !item.resolved : item.resolved));
+  const shown = state.events.filter(item => item.simulated === (state.mode !== 'esp')).filter(item => alertFilter === 'all' || (alertFilter === 'open' ? !item.resolved : item.resolved));
   return `${pageHead('EVENTOS / NOTIFICAÇÕES', 'Alertas', 'Ocorrências e estados de entrega',
     `<a class="btn secondary" href="#equipe">Destinatários →</a>`)}
+    ${state.mode === 'demo' ? `<section class="card settings-card"><h2>Testar notificações</h2><p>Envia de verdade aos destinos habilitados. Confira os contatos antes de testar.</p><div class="chip-row">${Object.entries(METRICS).map(([key, value]) => `<button class="btn secondary small" data-action="test-alert" data-metric="${key}">Testar ${value.label}</button>`).join('')}</div></section>` : ''}
     <div class="chip-row" role="group" aria-label="Filtrar alertas">${filters}</div>
     ${section(`Eventos (${shown.length})`)}
     <div class="alert-list">${shown.length ? shown.map(alertCard).join('') : '<div class="card empty">Nenhum evento neste filtro.</div>'}</div>
-    <p class="muted-note">Eventos simulados não disparam mensagens. A entrega depende dos destinos e credenciais configurados no APK.</p>`;
+    <p class="muted-note">Eventos fictícios automáticos são locais; apenas Testar envia aos destinos configurados.</p>`;
 }
 function peoplePage() {
   const cards = state.contacts.map(contact => `<article class="card contact-card">
@@ -257,7 +259,7 @@ function peoplePage() {
   return `${pageHead('DESTINATÁRIOS / PERFIS', 'Equipe', 'Classes de serviço por variável e canal',
     `<button class="btn" data-action="add-contact">${icon('plus')} Novo perfil</button>`)}
     <div class="people-list">${cards}</div>
-    <p class="muted-note">Configure os destinos e filtros; eventos simulados nunca geram envios.</p>`;
+    <p class="muted-note">Configure destinos e filtros. Um teste explícito no modo demo pode gerar envios reais.</p>`;
 }
 function rangeRow(key, label, min, max, unit) {
   return `<div class="range-row"><div class="flex-between"><span>${label}</span><strong id="limit-${key}">${state.limits[key]} ${unit}</strong></div>
@@ -265,23 +267,45 @@ function rangeRow(key, label, min, max, unit) {
 }
 function environmentsPage() {
   const devices = [...(state.devices || [])].sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || a.name.localeCompare(b.name));
-  return `${pageHead('ESP32 / ESPAÇOS', 'Ambientes', 'Um ESP32 por espaço · personalize limites e fixe favoritos',
-    backend === 'android' ? '<button class="btn" data-action="add-environment">+ Adicionar</button>' : '')}
+  return `${pageHead('ESP32 / ESPAÇOS', 'Ambientes', state.mode === 'demo' ? 'Cinco ambientes fictícios · ajuste leituras e limites' : 'Um ESP32 por espaço · personalize limites e fixe favoritos',
+    backend === 'android' && state.mode === 'esp' ? '<button class="btn" data-action="add-environment">+ Adicionar</button>' : '')}
+    ${state.mode === 'demo' ? `<section class="card settings-card"><h2>Leitura fictícia</h2><form id="demo-reading-form"><label class="form-field">Ambiente<select name="id">${devices.map(device => `<option value="${device.id}" ${device.id === state.selectedDeviceId ? 'selected' : ''}>${escapeHtml(device.name)}</option>`).join('')}</select></label><div class="environment-ranges">${[['temperature', 'Temperatura °C'], ['humidity', 'Umidade %'], ['voltage', 'Tensão V']].map(([key, label]) => `<label class="form-field">${label}<input type="number" name="${key}" step="any" required value="${state.samples[0]?.[key] ?? ''}"></label>`).join('')}</div><button class="btn" type="submit">Aplicar leitura</button></form><p>Valores fora dos limites configurados criam eventos fictícios.</p></section>` : ''}
     <div class="environment-list">${devices.map(device => `<article class="card environment-card">
       <span class="environment-avatar" aria-hidden="true">${environmentIcons[device.icon] || '❄️'}</span>
-      <div class="environment-copy"><strong>${escapeHtml(device.name)}</strong><small>${escapeHtml(device.id)} · ${device.online ? 'online' : 'aguardando ESP'}</small>
+      <div class="environment-copy"><strong>${escapeHtml(device.name)}</strong><small>${escapeHtml(device.id)} · ${state.mode === 'demo' ? 'demonstração' : device.online ? 'online' : 'aguardando ESP'}</small>
         <small>${decimal(device.limits.temperatureMin)}–${decimal(device.limits.temperatureMax)} °C · ${decimal(device.limits.humidityMin)}–${decimal(device.limits.humidityMax)}% · ${decimal(device.limits.voltageMin)}–${decimal(device.limits.voltageMax)} V</small></div>
       <div class="environment-actions"><button class="btn ghost small ${device.favorite ? 'is-favorite' : ''}" data-action="favorite-environment" data-id="${escapeHtml(device.id)}" aria-pressed="${!!device.favorite}" aria-label="${device.favorite ? 'Desafixar' : 'Fixar'} ${escapeHtml(device.name)} no início">★</button>
       <button class="btn ghost small" data-action="edit-environment" data-id="${escapeHtml(device.id)}">Editar</button></div></article>`).join('') || '<section class="card empty">Nenhum ambiente cadastrado. O ESP32 também aparece aqui após a primeira leitura.</section>'}</div>`;
 }
 function settingsPage() {
+  const config = state.settings || {};
   const channels = Object.entries(CHANNELS).map(([key, label]) =>
     `<div class="settings-line"><span>${label}</span><label class="toggle"><input type="checkbox" data-action="channel" data-channel="${key}" ${state.enabledChannels.includes(key) ? 'checked' : ''} aria-label="Habilitar ${label}"></label></div>`).join('');
-  return `${pageHead('CENTRAL / AJUSTES', 'Ajustes', 'Integrações locais do celular')}
-    <div class="settings-grid"><section class="card settings-card"><h2>ESP32 / MQTT</h2><p>Broker na porta 1883: ${state.mqttAvailable ? 'ativo' : 'indisponível'}. IP e chave ficam apenas no APK.</p></section>
-      <section class="card settings-card"><h2>Canais de alerta</h2>${channels}<p>Edite destinos em <a href="#equipe">Equipe</a>. SMTP e token WhatsApp são configurados apenas no APK.</p></section></div>
-    <section class="card settings-card"><h2>Central Android</h2><p>${backend === 'android' ? 'A interface é servida e processada pelo celular. Mantenha o acesso web numa rede confiável.' : 'Prévia Node com dados fictícios; abra o endereço fornecido pelo APK para acessar os ESPs.'}</p></section>`;
+  const url = (config.webUrls || []).map(item => `<li>${escapeHtml(item)}</li>`).join('');
+  return `${pageHead('CENTRAL / AJUSTES', 'Ajustes', 'Configurações compartilhadas com o aplicativo Android')}
+    <div class="settings-grid">
+      <section class="card settings-card"><h2>Central e acesso</h2><p>${escapeHtml(config.webStatus || 'Prévia independente')}</p><ul>${url}</ul>
+        <p>Porta web 8790 · HTTP local. Para acesso externo, use VPN ou proxy HTTPS.</p>
+        <p>Permissão para notificações: ${config.notificationsGranted ? 'concedida' : 'pendente'} · bateria sem restrição: ${config.batteryExempt ? 'sim' : 'pendente'}. Conceda permissões do sistema no celular.</p>
+        <p>Os usuários e as chaves web são gerenciados exclusivamente no aplicativo.</p></section>
+      <section class="card settings-card"><h2>ESP32 / MQTT</h2><p>${escapeHtml(config.mqttStatus || 'Sem broker')}</p><p>Porta 1883 · usuário winterhold · host: IP do celular</p><p>Chave MQTT: <code>${escapeHtml(config.mqttSecret || '—')}</code></p></section>
+      <section class="card settings-card"><h2>Canais de alerta</h2>${channels}<p>SMS neste celular: ${config.smsGranted ? 'permitido' : 'permissão pendente'}.</p><p>Edite destinos em <a href="#equipe">Equipe</a>.</p></section>
+      <section class="card settings-card"><h2>Demonstração</h2><div class="settings-line"><span>Usar dados fictícios</span><label class="toggle"><input type="checkbox" data-action="mode" ${state.mode === 'demo' ? 'checked' : ''} aria-label="Ativar demonstração"></label></div>
+        ${state.mode === 'demo' ? `<div class="settings-line"><span>Atualização automática</span><label class="toggle"><input type="checkbox" data-action="running" ${state.running ? 'checked' : ''}></label></div><div class="settings-line"><span>Simular desconexão</span><label class="toggle"><input type="checkbox" data-action="offline" ${state.offline ? 'checked' : ''}></label></div>` : '<p>Ative para explorar cinco ambientes mesmo sem ESP conectado.</p>'}</section>
+    </div>
+    <section class="card settings-card"><h2>E-mail e WhatsApp</h2><p>SMTP TLS porta 465 · senha ${config.smtpConfigured ? 'configurada' : 'pendente'}. Ponte Baileys · chave ${config.bridgeConfigured ? 'configurada' : 'pendente'}.</p>
+      <form id="delivery-form" autocomplete="off">
+        <label class="form-field">Servidor SMTP<input name="smtpHost" value="${escapeHtml(config.smtpHost || '')}" placeholder="smtp.exemplo.com"></label>
+        <label class="form-field">Usuário SMTP<input name="smtpUser" value="${escapeHtml(config.smtpUser || '')}"></label>
+        <label class="form-field">E-mail remetente<input name="smtpFrom" type="email" value="${escapeHtml(config.smtpFrom || '')}"></label>
+        <label class="form-field">Senha SMTP (vazio mantém a atual)<input name="smtpPassword" type="password" autocomplete="new-password"></label>
+        <label class="form-field">URL da ponte Node/Baileys<input name="bridgeUrl" type="url" value="${escapeHtml(config.bridgeUrl || '')}" placeholder="https://ponte.exemplo.com"></label>
+        <label class="form-field">Chave da ponte (vazio mantém a atual)<input name="bridgeToken" type="password" autocomplete="new-password"></label>
+        <button class="btn" type="submit">Salvar integrações</button>
+      </form><button class="btn secondary" data-action="bridge-status">Ver conexão e QR do WhatsApp</button><div id="bridge-status" role="status"></div>
+      <p>Credenciais são guardadas no Android e não são devolvidas pela API. Use HTTPS na ponte; HTTP só é aceito para 127.0.0.1 no aparelho.</p></section>`;
 }
+
 function render() {
   if (backend === 'loading' || backend === 'error' || backend === 'locked') return;
   const page = currentPage();
@@ -291,7 +315,7 @@ function render() {
   document.querySelector('#header-date').textContent = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
   document.title = `${pages[page][0]} · Winterhold`;
   document.querySelector('.demo-badge').innerHTML = `<span class="pulse"></span>${backend === 'android' ? 'CENTRAL ANDROID' : 'PRÉVIA'}`;
-  document.querySelector('.sidebar-note').innerHTML = `<span class="pulse"></span><strong>${backend === 'android' ? 'ESP32 / MQTT' : 'PRÉVIA'}</strong><span>${backend === 'android' && state.mode === 'esp' ? escapeHtml(state.selectedDeviceId ? environmentName(state.selectedDeviceId) : 'Aguardando leituras') : 'Dados fictícios'}</span>`;
+  document.querySelector('.sidebar-note').innerHTML = `<span class="pulse"></span><strong>${backend === 'android' ? (state.mode === 'demo' ? 'DEMONSTRAÇÃO' : 'ESP32 / MQTT') : 'PRÉVIA'}</strong><span>${backend === 'android' && state.mode === 'esp' ? escapeHtml(state.selectedDeviceId ? environmentName(state.selectedDeviceId) : 'Aguardando leituras') : escapeHtml(environmentName(state.selectedDeviceId))}</span>`;
   content.innerHTML = ({ inicio: overview, ambientes: environmentsPage, historico: historyPage, alertas: alertsPage, equipe: peoplePage, ajustes: settingsPage })[page]();
   if (dialog) renderDialog();
 }
@@ -367,6 +391,17 @@ document.addEventListener('click', async e => {
   if (!target) return;
   const action = target.dataset.action;
   if (action === 'dismiss' && e.target === target) { closeDialog(); return; }
+  if (action === 'bridge-status') {
+    const status = document.querySelector('#bridge-status');
+    if (backend !== 'android') { status.textContent = 'Conexão disponível apenas com o APK.'; return; }
+    try {
+      const response = await fetch('/api/v1/bridge', { headers: { 'X-Winterhold-Key': webKey }, cache: 'no-store' });
+      if (!response.ok) throw new Error((await response.json()).error || `HTTP ${response.status}`);
+      const value = await response.json();
+      status.innerHTML = `<p>WhatsApp: ${escapeHtml(value.connection)}</p>${value.qr?.startsWith('data:image/png;base64,') ? `<img src="${value.qr}" width="220" height="220" alt="QR para vincular WhatsApp">` : ''}`;
+    } catch (error) { status.textContent = `Ponte indisponível: ${error.message}`; }
+    return;
+  }
   if (action === 'close-dialog') { closeDialog(); return; }
   if (action === 'simulate') { openDialog('simulate'); return; }
   if (action === 'routes') { openDialog('routes', target.dataset.id); return; }
@@ -406,10 +441,15 @@ document.addEventListener('click', async e => {
   }
   if (action === 'metric') { metric = target.dataset.metric; render(); return; }
   if (action === 'selected-device') {
-    await sendAction({ type: 'selectedDevice', value: target.dataset.id }, () => {});
+    await sendAction({ type: 'selectedDevice', value: target.dataset.id }, () => selectDemoDevice(state, target.dataset.id));
     return;
   }
   if (action === 'alert-filter') { alertFilter = target.dataset.filter; render(); return; }
+  if (action === 'test-alert') {
+    if (backend !== 'android') { connectionBanner.hidden = false; connectionBanner.textContent = 'Testes de envio exigem o APK e destinos configurados.'; return; }
+    await sendAction({ type: 'testAlert', metric: target.dataset.metric }, () => {});
+    return;
+  }
   if (action === 'create-alert') {
     if (await sendAction({ type: 'simulateAlert', metric: target.dataset.metric },
       () => simulateAlert(state, target.dataset.metric))) {
@@ -442,7 +482,7 @@ document.addEventListener('change', async e => {
   if (backend === 'android') {
     const payload = ({
       running: () => ({ type: 'running', value: target.checked }),
-      mode: () => ({ type: 'mode', value: target.checked ? 'esp' : 'demo' }),
+      mode: () => ({ type: 'mode', value: target.checked ? 'demo' : 'esp' }),
       offline: () => ({ type: 'offline', value: target.checked }),
       channel: () => ({ type: 'channel', channel: target.dataset.channel, value: target.checked }),
       'contact-active': () => ({ type: 'contactActive', id: target.dataset.id, value: target.checked }),
@@ -452,7 +492,8 @@ document.addEventListener('change', async e => {
     if (payload) { await sendAction(payload, () => {}); render(); }
     return;
   }
-  if (action === 'running') state.running = target.checked;
+  if (action === 'mode') { state.mode = target.checked ? 'demo' : 'esp'; state.running = target.checked; }
+  else if (action === 'running') state.running = target.checked;
   else if (action === 'offline') setOffline(state, target.checked);
   else if (action === 'channel') {
     state.enabledChannels = target.checked
@@ -495,4 +536,26 @@ document.addEventListener('submit', async event => {
   webKey = new FormData(event.target).get('key').trim();
   sessionStorage.setItem('winterhold-web-key', webKey);
   await refreshFromApk();
+});
+
+document.addEventListener('submit', async event => {
+  if (event.target.id === 'demo-reading-form') {
+    event.preventDefault();
+    const fields = new FormData(event.target);
+    const id = String(fields.get('id'));
+    const [temperature, humidity, voltage] = ['temperature', 'humidity', 'voltage'].map(key => Number(fields.get(key)));
+    if (await sendAction({ type: 'setDemoReading', id, temperature, humidity, voltage },
+      () => setDemoReading(state, id, temperature, humidity, voltage))) {
+      await sendAction({ type: 'selectedDevice', value: id }, () => selectDemoDevice(state, id));
+    }
+  }
+  if (event.target.id === 'delivery-form') {
+    event.preventDefault();
+    const fields = new FormData(event.target);
+    const payload = { type: 'deliverySettings', ...Object.fromEntries(fields.entries()) };
+    if (await sendAction(payload, () => {
+      Object.assign(state.settings, { smtpHost: payload.smtpHost, smtpUser: payload.smtpUser,
+        smtpFrom: payload.smtpFrom, bridgeUrl: payload.bridgeUrl });
+    })) { connectionBanner.hidden = false; connectionBanner.textContent = 'Configurações salvas no celular.'; }
+  }
 });

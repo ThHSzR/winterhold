@@ -16,20 +16,29 @@ const event = (time, metric, title, detail, severity, resolved = false) => ({
   id: nextId(), time, metric, title, detail, severity, resolved, simulated: true
 });
 
+const demoProfiles = [
+  ['demo_sala01', 'Sala de aula 01', 'classroom', 19, 26, 35, 65, 198, 242, true],
+  ['demo_lab02', 'Laboratório 02', 'lab', 20, 24, 40, 60, 205, 235, true],
+  ['demo_servidores', 'Sala de servidores', 'server', 17, 22, 30, 55, 208, 232, false],
+  ['demo_adm', 'Administração', 'office', 21, 28, 35, 70, 200, 240, false],
+  ['demo_auditorio', 'Auditório', 'snow', 18, 25, 30, 68, 198, 242, false]
+];
 export function createDemoState(now = Date.now()) {
-  const samples = [];
-  for (let i = 35; i >= 0; i--) {
-    const step = 35 - i;
-    samples.unshift({
-      time: now - i * 5 * 60_000,
-      temperature: 23.4 + 0.9 * Math.sin(step / 5),
-      humidity: 58 + 4 * Math.sin(step / 7),
-      voltage: 220 + 2.5 * Math.sin(step / 3)
-    });
-  }
+  const devices = demoProfiles.map(([id, name, icon, temperatureMin, temperatureMax,
+    humidityMin, humidityMax, voltageMin, voltageMax, favorite]) => ({
+    id, name, icon, favorite, online: true, limits: { temperatureMin, temperatureMax,
+      humidityMin, humidityMax, voltageMin, voltageMax }
+  }));
+  const demoSamples = Object.fromEntries(devices.map((device, offset) => [device.id,
+    Array.from({ length: 36 }, (_, i) => ({
+      time: now - i * 5 * 60_000, deviceId: device.id,
+      temperature: 22 + offset * .5 + .9 * Math.sin((36 - i) / 5),
+      humidity: 52 + offset * 2 + 4 * Math.sin((36 - i) / 7),
+      voltage: 220 + 2.5 * Math.sin((36 - i) / 3)
+    }))]));
   return {
-    tick: 36,
-    samples,
+    tick: 36, mode: 'demo', devices, selectedDeviceId: devices[0].id, demoSamples,
+    samples: demoSamples[devices[0].id],
     events: [
       event(now - 32 * 60_000, 'temperature', 'Temperatura acima do limite', 'Sala 01 · 27,1 °C por 5 min · limite 26 °C', 'warning', true),
       event(now - 95 * 60_000, 'voltage', 'Oscilação de tensão', 'Sala 01 · 194 V · faixa configurada 198–242 V', 'critical', true),
@@ -41,23 +50,51 @@ export function createDemoState(now = Date.now()) {
       { id: 'management', name: 'Gestão de instalações', role: 'Gestão', metrics: ['temperature', 'humidity'], channels: ['email', 'whatsapp'], active: true }
     ],
     limits: { temperature: 26, humidity: 70, nominalVoltage: 220, tolerance: 10 },
-    enabledChannels: ['sms', 'email', 'whatsapp'],
-    running: true,
-    offline: false,
+    enabledChannels: ['sms', 'email', 'whatsapp'], running: true, offline: false,
+    settings: { smtpHost: '', smtpUser: '', smtpFrom: '', smtpConfigured: false, bridgeUrl: '',
+      bridgeConfigured: false, mqttSecret: 'prévia independente', mqttStatus: 'Sem broker',
+      webStatus: 'Prévia Node', webUrls: [], smsGranted: false, notificationsGranted: false, batteryExempt: false },
     deviceHealth: { battery: 83, memory: 46, storage: 62, uptime: '12h 08min' }
   };
 }
 
+export function selectDemoDevice(state, id) {
+  if (!state.demoSamples?.[id]) throw new Error('Ambiente desconhecido');
+  state.selectedDeviceId = id;
+  state.samples = state.demoSamples[id];
+}
+export function setDemoReading(state, id, temperature, humidity, voltage, now = Date.now()) {
+  const device = state.devices?.find(item => item.id === id);
+  if (!device) throw new Error('Ambiente desconhecido');
+  if (!(temperature >= -40 && temperature <= 85 && humidity >= 0 && humidity <= 100 && voltage >= 0 && voltage <= 300))
+    throw new Error('Leitura fora da faixa física');
+  const samples = state.demoSamples[id];
+  samples.unshift({ time: now, deviceId: id, temperature, humidity, voltage });
+  samples.length = Math.min(samples.length, 60);
+  if (state.selectedDeviceId === id) state.samples = samples;
+  for (const [metric, value] of Object.entries({ temperature, humidity, voltage })) {
+    const low = device.limits[`${metric}Min`], high = device.limits[`${metric}Max`];
+    if (value < low || value > high) {
+      const alert = event(now, metric, `${METRICS[metric].label} ${value < low ? 'abaixo do mínimo' : 'acima do máximo'}`,
+        `${device.name} · ${value} ${METRICS[metric].unit} · faixa ${low}–${high}`, metric === 'voltage' ? 'critical' : 'warning');
+      alert.deviceId = id; state.events.unshift(alert);
+    }
+  }
+}
 export function advance(state, now = Date.now()) {
   if (!state.running || state.offline) return false;
   state.tick++;
-  state.samples.unshift({
-    time: now,
-    temperature: 23.4 + 0.9 * Math.sin(state.tick / 5),
-    humidity: 58 + 4 * Math.sin(state.tick / 7),
-    voltage: 220 + 2.5 * Math.sin(state.tick / 3)
-  });
-  if (state.samples.length > 60) state.samples.length = 60;
+  if (state.demoSamples) {
+    for (const [id, samples] of Object.entries(state.demoSamples)) {
+      const current = samples[0];
+      setDemoReading(state, id, current.temperature + .08 * Math.sin(state.tick / 5),
+        current.humidity + .15 * Math.sin(state.tick / 7), current.voltage + .1 * Math.sin(state.tick / 3), now);
+    }
+  } else {
+    state.samples.unshift({ time: now, temperature: 23.4 + .9 * Math.sin(state.tick / 5),
+      humidity: 58 + 4 * Math.sin(state.tick / 7), voltage: 220 + 2.5 * Math.sin(state.tick / 3) });
+    if (state.samples.length > 60) state.samples.length = 60;
+  }
   return true;
 }
 

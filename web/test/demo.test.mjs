@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createDemoState, advance, simulateAlert, setOffline, resolveAlert,
+  createDemoState, advance, simulateAlert, setOffline, resolveAlert, selectDemoDevice, setDemoReading,
   addContact, toggleContactItem, routeAlert, health, CHANNELS
 } from '../demo.js';
 
@@ -11,6 +11,19 @@ test('escopo visual acompanha o APK e mantém apenas saúde do celular', () => {
   assert.deepEqual(Object.keys(state.deviceHealth), ['battery', 'memory', 'storage', 'uptime']);
   assert.equal(Object.hasOwn(state, 'infrastructure'), false);
   assert.equal(Object.hasOwn(state, 'automations'), false);
+});
+
+test('cinco ambientes demo têm leituras próprias e desvios apenas fictícios', () => {
+  const state = createDemoState(1_000_000);
+  assert.equal(state.devices.length, 5);
+  const previous = state.samples[0].temperature;
+  setDemoReading(state, 'demo_servidores', 30, 40, 220, 1_000_001);
+  assert.equal(state.samples[0].temperature, previous);
+  assert.equal(state.events[0].simulated, true);
+  assert.equal(state.events[0].deviceId, 'demo_servidores');
+  selectDemoDevice(state, 'demo_servidores');
+  assert.equal(state.samples[0].temperature, 30);
+  assert.throws(() => selectDemoDevice(state, 'inexistente'), /Ambiente desconhecido/);
 });
 
 test('amostras demo avançam somente quando a simulação e a conexão estão ativas', () => {

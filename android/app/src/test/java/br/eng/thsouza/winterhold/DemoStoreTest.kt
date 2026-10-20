@@ -8,7 +8,7 @@ class DemoStoreTest {
     @Test fun favoritesAndRecipientsPersistWhileDemoResetsOnRestart() {
         val original = DemoStore()
         original.saveEnvironment(EnvironmentProfile("lab-01", "Laboratório", favorite = true))
-        val recipient = original.contacts.first().copy(phone = "+5511999999999", email = "alertas@thsouza.eng.br")
+        val recipient = original.contacts.first().copy(phone = "+5511999999999", email = "alertas@example.com")
         original.updateContact(recipient)
         original.simulationRunning = true
         original.liveMode = false
@@ -108,6 +108,7 @@ class DemoStoreTest {
             temperatureLimit = 30f
             humidityLimit = 80f
             simulationRunning = false
+            liveMode = false
             simulateDisconnection()
             simulateAlert(Metric.VOLTAGE)
             resolveAlert(events.first().id)
@@ -127,14 +128,16 @@ class DemoStoreTest {
     }
 
     @Test fun demoResetsOffOnStartupAndKeepsBoundedHistory() {
-        val original = DemoStore().apply { simulationRunning = true }
+        val original = DemoStore().apply { simulationRunning = true; liveMode = false }
         repeat(80) { original.advance() }
         val restored = DemoStore().apply { restoreJson(original.savedJson()) }
         assertFalse(restored.simulationRunning)
         assertTrue(restored.liveMode)
         restored.advance()
         assertEquals(original.readings.toList(), restored.readings.toList())
-        assertEquals(60, restored.readings.size)
+        assertEquals(300, restored.readings.size)
+        assertEquals(5, restored.demoEnvironments.size)
+        assertEquals(60, restored.readings.count { it.deviceId == "demo_sala01" })
     }
 
     @Test fun invalidStateDoesNotPartiallyReplaceLiveData() {
@@ -150,10 +153,26 @@ class DemoStoreTest {
     }
 
     @Test fun persistedEventsAreBoundedAndRemainDemoEvents() {
-        val store = DemoStore()
+        val store = DemoStore().apply { liveMode = false }
         repeat(510) { store.simulateAlert(Metric.TEMPERATURE) }
         val restored = DemoStore().apply { restoreJson(store.savedJson()) }
         assertEquals(500, restored.events.size)
         assertTrue(restored.events.all { it.simulated })
+    }
+    @Test fun fiveDemoRoomsKeepIndependentReadingsAndAlerts() {
+        val store = DemoStore().apply { liveMode = false }
+        assertEquals(5, store.demoEnvironments.size)
+        store.selectEnvironment("demo_servidores")
+        val events = store.setDemoReading("demo_servidores", 30f, 40f, 220f)
+        assertEquals(1, events.size)
+        assertTrue(events.single().simulated)
+        assertEquals("demo_servidores", store.latest.deviceId)
+        store.selectEnvironment("demo_sala01")
+        assertNotEquals(30f, store.latest.temperature)
+        assertThrows(IllegalArgumentException::class.java) { store.saveDemoEnvironment(EnvironmentProfile("new", "New")) }
+        val restored = DemoStore().apply { restoreJson(store.savedJson()); liveMode = false }
+        assertEquals("demo_sala01", restored.selectedDemoId)
+        restored.selectEnvironment("demo_servidores")
+        assertEquals(30f, restored.latest.temperature!!, 0.01f)
     }
 }

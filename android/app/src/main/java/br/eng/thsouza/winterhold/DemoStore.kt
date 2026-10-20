@@ -105,6 +105,17 @@ class DemoStore {
     val liveReadings = mutableStateListOf<Reading>()
     val lastSeen = mutableStateMapOf<String, Long>()
     val environments = mutableStateMapOf<String, EnvironmentProfile>()
+    val demoEnvironments = mutableStateMapOf<String, EnvironmentProfile>()
+    var selectedDemoId by mutableStateOf("demo_sala01")
+    companion object {
+        val demoPresets = listOf(
+            EnvironmentProfile("demo_sala01", "Sala de aula 01", "classroom", 19f, 26f, 35f, 65f, 198f, 242f, true),
+            EnvironmentProfile("demo_lab02", "Laboratório 02", "lab", 20f, 24f, 40f, 60f, 205f, 235f, true),
+            EnvironmentProfile("demo_servidores", "Sala de servidores", "server", 17f, 22f, 30f, 55f, 208f, 232f),
+            EnvironmentProfile("demo_adm", "Administração", "office", 21f, 28f, 35f, 70f, 200f, 240f),
+            EnvironmentProfile("demo_auditorio", "Auditório", "snow", 18f, 25f, 30f, 68f, 198f, 242f)
+        )
+    }
     val events = mutableStateListOf<AlertEvent>()
     val contacts = mutableStateListOf<DemoContact>()
 
@@ -124,15 +135,17 @@ class DemoStore {
 
     init {
         val now = System.currentTimeMillis()
-        for (i in 35 downTo 0) {
-            val step = 35 - i
-            readings.add(0, Reading(
-                time = now - i * 5 * 60_000L,
-                temperature = 23.4f + 0.9f * sin(step / 5.0).toFloat(),
-                humidity = 58f + 4f * sin(step / 7.0).toFloat(),
-                voltage = 220f + 2.5f * sin(step / 3.0).toFloat()
-            ))
+        demoPresets.forEach { profile ->
+            demoEnvironments[profile.deviceId] = profile
+            for (i in 35 downTo 0) {
+                val step = 35 - i
+                readings.add(Reading(now - i * 5 * 60_000L,
+                    22f + demoPresets.indexOf(profile) * .5f + .9f * sin(step / 5.0).toFloat(),
+                    52f + demoPresets.indexOf(profile) * 2f + 4f * sin(step / 7.0).toFloat(),
+                    220f + 2.5f * sin(step / 3.0).toFloat(), profile.deviceId))
+            }
         }
+        readings.sortWith(compareByDescending { it.time })
         tick = 36
         events.add(AlertEvent(
             time = now - 32 * 60_000L,
@@ -177,12 +190,42 @@ class DemoStore {
 
     val visibleReadings: List<Reading> get() = if (liveMode) {
         liveReadings.filter { it.deviceId == selectedDeviceId }
-    } else readings
+    } else readings.filter { it.deviceId == selectedDemoId }
     val latest: Reading get() = visibleReadings.firstOrNull() ?: Reading(0, null, null, null)
     val deviceOnline: Boolean get() = selectedDeviceId?.let { id ->
         lastSeen[id]?.let { now - it in 0..15_000L }
     } ?: false
-    val selectedEnvironment: EnvironmentProfile? get() = selectedDeviceId?.let(environments::get)
+    val selectedEnvironment: EnvironmentProfile? get() = if (liveMode) selectedDeviceId?.let(environments::get)
+        else demoEnvironments[selectedDemoId]
+    val currentDeviceId: String? get() = if (liveMode) selectedDeviceId else selectedDemoId
+    val currentEnvironments: Map<String, EnvironmentProfile> get() = if (liveMode) environments else demoEnvironments
+    fun selectEnvironment(id: String) {
+        require(id in currentEnvironments) { "Ambiente desconhecido" }
+        if (liveMode) selectedDeviceId = id else selectedDemoId = id
+    }
+    fun saveDemoEnvironment(profile: EnvironmentProfile) {
+        profile.validated()
+        require(profile.deviceId in demoEnvironments) { "Ambiente demo desconhecido" }
+        demoEnvironments[profile.deviceId] = profile
+    }
+    fun setDemoReading(id: String, temperature: Float, humidity: Float, voltage: Float): List<AlertEvent> {
+        require(!liveMode && id in demoEnvironments) { "Ative a demonstração e selecione um ambiente" }
+        require(temperature.isFinite() && temperature in -40f..85f && humidity.isFinite() && humidity in 0f..100f &&
+            voltage.isFinite() && voltage in 0f..300f) { "Leitura fora da faixa física" }
+        val reading = Reading(System.currentTimeMillis(), temperature, humidity, voltage, id)
+        readings.add(0, reading)
+        readings.indices.filter { readings[it].deviceId == id }.drop(60).asReversed().forEach { readings.removeAt(it) }
+        now = reading.time
+        return Metric.entries.mapNotNull { metric ->
+            val value = reading.value(metric)!!
+            val (low, high) = demoEnvironments.getValue(id).bounds(metric)
+            if (value in low..high) null else AlertEvent(time = now, metric = metric,
+                title = "${metric.label} ${if (value < low) "abaixo do mínimo" else "acima do máximo"}",
+                detail = "$id · $value ${metric.unit} · faixa $low–$high ${metric.unit}",
+                severity = if (metric == Metric.VOLTAGE) Severity.CRITICAL else Severity.WARNING,
+                simulated = true, deviceId = id).also { events.add(0, it) }
+        }
+    }
 
     fun saveEnvironment(profile: EnvironmentProfile) {
         profile.validated()
@@ -247,25 +290,28 @@ class DemoStore {
     }
 
     fun advance() {
-        if (!simulationRunning || offlineDemo) return
+        if (!simulationRunning || offlineDemo || liveMode) return
         tick++
-        readings.add(0, Reading(
-            time = System.currentTimeMillis(),
-            temperature = 23.4f + 0.9f * sin(tick / 5.0).toFloat(),
-            humidity = 58f + 4f * sin(tick / 7.0).toFloat(),
-            voltage = 220f + 2.5f * sin(tick / 3.0).toFloat()
-        ))
-        if (readings.size > 60) readings.removeAt(readings.lastIndex)
+        demoEnvironments.values.forEach { profile ->
+            val previous = readings.firstOrNull { it.deviceId == profile.deviceId }
+            readings.add(0, Reading(System.currentTimeMillis(),
+                (previous?.temperature ?: 22f) + .08f * sin(tick / 5.0).toFloat(),
+                (previous?.humidity ?: 55f) + .15f * sin(tick / 7.0).toFloat(),
+                (previous?.voltage ?: 220f) + .1f * sin(tick / 3.0).toFloat(), profile.deviceId))
+            readings.indices.filter { readings[it].deviceId == profile.deviceId }.drop(60).asReversed().forEach { readings.removeAt(it) }
+        }
     }
 
-    fun simulateAlert(metric: Metric) {
-        val (title, detail, severity) = when (metric) {
-            Metric.TEMPERATURE -> Triple("Temperatura acima do limite", "Sala 01 · 28,2 °C · limite ${temperatureLimit.toInt()} °C", Severity.WARNING)
-            Metric.HUMIDITY -> Triple("Umidade acima do limite", "Sala 01 · 76% · limite ${humidityLimit.toInt()}%", Severity.WARNING)
-            Metric.VOLTAGE -> Triple("Oscilação de tensão", "Sala 01 · 190 V · nominal ${nominalVoltage.toInt()} V", Severity.CRITICAL)
-        }
-        events.add(0, AlertEvent(time = System.currentTimeMillis(), metric = metric,
-            title = title, detail = detail, severity = severity))
+    fun simulateAlert(metric: Metric): AlertEvent {
+        require(!liveMode) { "Ative o modo demonstração" }
+        val id = selectedDemoId
+        val profile = demoEnvironments.getValue(id)
+        val (low, high) = profile.bounds(metric)
+        return AlertEvent(time = System.currentTimeMillis(), metric = metric,
+            title = "Teste de ${metric.label.lowercase()}",
+            detail = "${profile.name} · $id · limite $low–$high ${metric.unit}",
+            severity = if (metric == Metric.VOLTAGE) Severity.CRITICAL else Severity.WARNING,
+            simulated = true, deviceId = id).also { events.add(0, it) }
     }
 
     fun simulateDisconnection() {
@@ -273,7 +319,8 @@ class DemoStore {
         events.add(0, AlertEvent(
             time = System.currentTimeMillis(), metric = null,
             title = if (offlineDemo) "Dispositivo sem comunicação" else "Comunicação restabelecida",
-            detail = "Sala 01 · ESP32 simulado · evento de demonstração",
+            detail = "$selectedDemoId · ESP32 simulado · evento de demonstração",
+            deviceId = selectedDemoId,
             severity = if (offlineDemo) Severity.CRITICAL else Severity.INFO,
             resolved = !offlineDemo
         ))
@@ -305,10 +352,10 @@ class DemoStore {
         }
 
     internal fun savedJson(): String = JSONObject()
-        .put("version", 4).put("tick", tick)
+        .put("version", 5).put("tick", tick)
         .put("readings", JSONArray(readings.map { JSONObject()
             .put("time", it.time).put("temperature", it.temperature)
-            .put("humidity", it.humidity).put("voltage", it.voltage) }))
+            .put("humidity", it.humidity).put("voltage", it.voltage).put("deviceId", it.deviceId) }))
         .put("liveReadings", JSONArray(liveReadings.map { JSONObject()
             .put("time", it.time).put("temperature", it.temperature).put("humidity", it.humidity)
             .put("voltage", it.voltage).put("deviceId", it.deviceId) }))
@@ -319,7 +366,13 @@ class DemoStore {
             .put("humidityMin", profile.humidityMin).put("humidityMax", profile.humidityMax)
             .put("voltageMin", profile.voltageMin).put("voltageMax", profile.voltageMax)
             .put("favorite", profile.favorite) }))
-        .put("liveMode", liveMode).put("selectedDeviceId", selectedDeviceId)
+        .put("demoEnvironments", JSONArray(demoEnvironments.values.sortedBy { it.deviceId }.map { profile -> JSONObject()
+            .put("deviceId", profile.deviceId).put("name", profile.name).put("icon", profile.icon)
+            .put("temperatureMin", profile.temperatureMin).put("temperatureMax", profile.temperatureMax)
+            .put("humidityMin", profile.humidityMin).put("humidityMax", profile.humidityMax)
+            .put("voltageMin", profile.voltageMin).put("voltageMax", profile.voltageMax)
+            .put("favorite", profile.favorite) }))
+        .put("liveMode", liveMode).put("selectedDeviceId", selectedDeviceId).put("selectedDemoId", selectedDemoId)
         .put("events", JSONArray(events.take(500).map { JSONObject()
             .put("id", it.id).put("time", it.time).put("metric", it.metric?.name ?: JSONObject.NULL)
             .put("title", it.title).put("detail", it.detail).put("severity", it.severity.name)
@@ -340,14 +393,15 @@ class DemoStore {
     internal fun restoreJson(json: String) {
         val root = JSONObject(json)
         val version = root.getInt("version")
-        require(version in 1..4) { "Versão de estado desconhecida" }
+        require(version in 1..5) { "Versão de estado desconhecida" }
         val savedTick = root.getInt("tick").also { require(it >= 0) }
         fun optionalFloat(json: JSONObject, key: String): Float? = if (json.isNull(key)) null else
             json.getDouble(key).toFloat().also { require(it.isFinite()) }
         val savedReadings = root.getJSONArray("readings").objects().map {
             Reading(it.getLong("time"), optionalFloat(it, "temperature"),
-                optionalFloat(it, "humidity"), optionalFloat(it, "voltage"))
-        }.also { require(it.isNotEmpty() && it.size <= 60) }
+                optionalFloat(it, "humidity"), optionalFloat(it, "voltage"),
+                it.optString("deviceId").takeIf { id -> id in demoPresets.map { preset -> preset.deviceId } } ?: "demo_sala01")
+        }.also { require(it.isNotEmpty() && it.size <= 300) }
         val savedLive = if (version >= 2) root.getJSONArray("liveReadings").objects().map {
             val id = it.getString("deviceId").also { id -> require(id.matches(Regex("[A-Za-z0-9_-]{1,40}"))) }
             Reading(it.getLong("time"), optionalFloat(it, "temperature"), optionalFloat(it, "humidity"),
@@ -388,13 +442,23 @@ class DemoStore {
         } else savedSeen.keys.map { id -> EnvironmentProfile(id, id, temperatureMax = temperature,
             humidityMax = humidity, voltageMin = nominal * (1 - tolerance / 100),
             voltageMax = nominal * (1 + tolerance / 100)).validated() }
+        val savedDemoProfiles = if (version >= 5) root.getJSONArray("demoEnvironments").objects().map { item ->
+            EnvironmentProfile(item.getString("deviceId"), item.getString("name"), item.getString("icon"),
+                item.getDouble("temperatureMin").toFloat(), item.getDouble("temperatureMax").toFloat(),
+                item.getDouble("humidityMin").toFloat(), item.getDouble("humidityMax").toFloat(),
+                item.getDouble("voltageMin").toFloat(), item.getDouble("voltageMax").toFloat(),
+                item.optBoolean("favorite", false)).validated()
+        }.also { require(it.map { profile -> profile.deviceId }.toSet() == demoPresets.map { it.deviceId }.toSet()) }
+            else demoPresets
+        val savedDemoId = root.optString("selectedDemoId", "demo_sala01").takeIf { it in demoPresets.map { preset -> preset.deviceId } }
+            ?: "demo_sala01"
         require(savedProfiles.size <= 32 && savedProfiles.map { it.deviceId }.distinct().size == savedProfiles.size)
         require(savedSeen.keys.all { id -> savedProfiles.any { it.deviceId == id } })
         require(selected == null || savedProfiles.any { it.deviceId == selected })
-        val running = root.getBoolean("simulationRunning")
-        val offline = root.getBoolean("offlineDemo")
         val channels = root.getJSONArray("enabledChannels").strings().map(Channel::valueOf)
         readings.clear(); readings.addAll(savedReadings)
+        demoEnvironments.clear(); savedDemoProfiles.forEach { demoEnvironments[it.deviceId] = it }
+        selectedDemoId = savedDemoId
         liveReadings.clear(); liveReadings.addAll(savedLive)
         lastSeen.clear(); lastSeen.putAll(savedSeen)
         environments.clear(); savedProfiles.forEach { environments[it.deviceId] = it }

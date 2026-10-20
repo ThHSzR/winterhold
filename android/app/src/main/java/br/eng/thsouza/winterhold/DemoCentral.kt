@@ -23,7 +23,6 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
-import java.security.MessageDigest
 import java.util.Collections
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
@@ -42,7 +41,8 @@ object DemoCentral {
         private set
     var mqttSecret by mutableStateOf("")
         private set
-    var webSecret by mutableStateOf("")
+    val webSecret: String get() = webUsers?.users?.firstOrNull()?.key.orEmpty()
+    internal var webUsers: WebAccessUsers? = null
         private set
     private var persistence: DemoPersistence? = null
     private var delivery: AlertDelivery? = null
@@ -86,10 +86,7 @@ object DemoCentral {
         }.joinToString("") { "%02x".format(it) }.also {
             preferences.edit().putString("secret", it).commit()
         }
-        val webPreferences = context.applicationContext.getSharedPreferences("web_access", Context.MODE_PRIVATE)
-        webSecret = webPreferences.getString("secret", null) ?: ByteArray(18).also {
-            SecureRandom().nextBytes(it)
-        }.joinToString("") { "%02x".format(it) }.also { webPreferences.edit().putString("secret", it).commit() }
+        webUsers = WebAccessUsers(context.applicationContext)
         // Persistence belongs to the app state, even when the user stops the web service.
         observer = Snapshot.registerGlobalWriteObserver {
             main.removeCallbacks(saveChanges)
@@ -109,6 +106,7 @@ object DemoCentral {
             }
         }
     }
+    fun sendTest(event: AlertEvent) { delivery?.dispatchTest(store, event) }
 
     fun ensureStarted(context: Context) {
         prepare(context)
@@ -229,11 +227,32 @@ internal class DemoHttpServer(
             if (route == "/healthz" && method == "GET") {
                 return respond(socket, 200, "application/json", """{"status":"ok","mode":"android-central","service":"winterhold-apk"}""".toByteArray())
             }
-            if (route == "/api/v1/state" || route == "/api/v1/action") {
-                val supplied = headers["x-winterhold-key"].orEmpty().toByteArray(StandardCharsets.UTF_8)
-                if (!MessageDigest.isEqual(supplied, DemoCentral.webSecret.toByteArray(StandardCharsets.UTF_8)))
+            if (route == "/api/v1/state" || route == "/api/v1/action" || route == "/api/v1/bridge") {
+                if (DemoCentral.webUsers?.accepts(headers["x-winterhold-key"].orEmpty()) != true)
                     return respond(socket, 401, "application/json", """{"error":"Chave web inválida"}""".toByteArray())
                 try {
+                    if (route == "/api/v1/bridge" && method == "GET") {
+                        val settings = DeliverySettings(context)
+                        require(settings.bridgeUrl.isNotBlank() && settings.bridgeToken.isNotBlank()) { "Configure a ponte" }
+                        val connection = java.net.URL("${settings.bridgeUrl}/status").openConnection() as java.net.HttpURLConnection
+                        try {
+                            connection.connectTimeout = 3000; connection.readTimeout = 5000
+                            connection.instanceFollowRedirects = false
+                            connection.setRequestProperty("Authorization", "Bearer ${settings.bridgeToken}")
+                            require(connection.responseCode == 200) { "Ponte indisponível: HTTP ${connection.responseCode}" }
+                            val body = java.io.ByteArrayOutputStream()
+                            connection.inputStream.use { stream ->
+                                val chunk = ByteArray(4096)
+                                while (true) {
+                                    val count = stream.read(chunk)
+                                    if (count < 0) break
+                                    require(body.size() + count <= 100_000) { "Resposta da ponte muito longa" }
+                                    body.write(chunk, 0, count)
+                                }
+                            }
+                            return respond(socket, 200, "application/json", body.toByteArray())
+                        } finally { connection.disconnect() }
+                    }
                     val json = when {
                         route == "/api/v1/state" && method == "GET" -> onMain { snapshot() }
                         route == "/api/v1/action" && method == "POST" -> {
@@ -340,51 +359,76 @@ internal class DemoHttpServer(
             .put("enabledChannels", JSONArray(store.enabledChannels.map { it.name.lowercase(Locale.ROOT) }))
             .put("running", store.simulationRunning).put("offline", store.offlineDemo)
             .put("mode", if (store.liveMode) "esp" else "demo")
-            .put("selectedDeviceId", store.selectedDeviceId ?: JSONObject.NULL)
+            .put("selectedDeviceId", store.currentDeviceId ?: JSONObject.NULL)
             .put("deliveries", JSONArray(store.events.flatMap { event -> store.contacts.flatMap { contact ->
                 Channel.entries.mapNotNull { channel -> deliveryStatus(event, contact, channel) }
             } }.take(100)))
-            .put("devices", JSONArray(store.environments.values.sortedBy { it.name }.map { profile -> JSONObject()
+            .put("devices", JSONArray(store.currentEnvironments.values.sortedBy { it.name }.map { profile -> JSONObject()
                 .put("id", profile.deviceId).put("name", profile.name).put("icon", profile.icon).put("favorite", profile.favorite)
                 .put("lastSeen", store.lastSeen[profile.deviceId] ?: JSONObject.NULL)
-                .put("online", store.lastSeen[profile.deviceId]?.let { store.now - it in 0..15_000L } ?: false)
+                .put("online", if (store.liveMode) store.lastSeen[profile.deviceId]?.let { store.now - it in 0..15_000L } ?: false else !store.offlineDemo)
                 .put("limits", JSONObject()
                     .put("temperatureMin", profile.temperatureMin).put("temperatureMax", profile.temperatureMax)
                     .put("humidityMin", profile.humidityMin).put("humidityMax", profile.humidityMax)
                     .put("voltageMin", profile.voltageMin).put("voltageMax", profile.voltageMax)) }))
             .put("mqttAvailable", DemoCentral.mqttStatus.startsWith("Recebendo"))
+            .put("settings", DeliverySettings(context).let { settings -> JSONObject()
+                .put("smtpHost", settings.smtpHost).put("smtpUser", settings.smtpUser).put("smtpFrom", settings.smtpFrom)
+                .put("smtpConfigured", settings.smtpPassword.isNotEmpty())
+                .put("bridgeUrl", settings.bridgeUrl).put("bridgeConfigured", settings.bridgeToken.isNotEmpty())
+                .put("mqttSecret", DemoCentral.mqttSecret).put("mqttStatus", DemoCentral.mqttStatus)
+                .put("webStatus", DemoCentral.status).put("webUrls", JSONArray(DemoCentral.urls))
+                .put("smsGranted", context.checkSelfPermission(android.Manifest.permission.SEND_SMS) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+                .put("notificationsGranted", android.os.Build.VERSION.SDK_INT < 33 ||
+                    context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+                .put("batteryExempt", CentralService.batteryExempt(context)) })
             .put("deviceHealth", health)
     }
 
     private fun applyAction(action: JSONObject) {
         when (action.optString("type")) {
-            "mode" -> store.liveMode = when (action.getString("value")) {
+            "mode" -> { store.liveMode = when (action.getString("value")) {
                 "esp" -> true; "demo" -> false
                 else -> throw IllegalArgumentException("Modo inválido")
-            }
+            }; if (!store.liveMode) store.simulationRunning = true }
             "selectedDevice" -> {
                 val id = action.getString("value")
-                require(id in store.environments) { "Ambiente desconhecido" }
-                store.selectedDeviceId = id
+                store.selectEnvironment(id)
             }
             "saveEnvironment" -> {
                 val profile = action.getJSONObject("environment")
                 val limits = profile.getJSONObject("limits")
                 fun number(key: String) = limits.optDouble(key, Double.NaN).toFloat()
-                store.saveEnvironment(EnvironmentProfile(
+                val environment = EnvironmentProfile(
                     deviceId = profile.optString("id"), name = profile.optString("name").trim(),
                     icon = profile.optString("icon"),
                     temperatureMin = number("temperatureMin"), temperatureMax = number("temperatureMax"),
                     humidityMin = number("humidityMin"), humidityMax = number("humidityMax"),
                     voltageMin = number("voltageMin"), voltageMax = number("voltageMax"),
-                    favorite = profile.optBoolean("favorite", store.environments[profile.optString("id")]?.favorite ?: false)))
+                    favorite = profile.optBoolean("favorite", store.currentEnvironments[profile.optString("id")]?.favorite ?: false))
+                if (store.liveMode) store.saveEnvironment(environment) else store.saveDemoEnvironment(environment)
             }
             "favoriteEnvironment" -> {
                 val id = action.getString("id")
-                val old = store.environments[id] ?: throw IllegalArgumentException("Ambiente desconhecido")
-                store.saveEnvironment(old.copy(favorite = action.getBoolean("value")))
+                val old = store.currentEnvironments[id] ?: throw IllegalArgumentException("Ambiente desconhecido")
+                if (store.liveMode) store.saveEnvironment(old.copy(favorite = action.getBoolean("value")))
+                else store.saveDemoEnvironment(old.copy(favorite = action.getBoolean("value")))
             }
             "simulateAlert" -> store.simulateAlert(metric(action.getString("metric")))
+            "testAlert" -> DemoCentral.sendTest(store.simulateAlert(metric(action.getString("metric"))))
+            "setDemoReading" -> store.setDemoReading(action.getString("id"), action.getDouble("temperature").toFloat(),
+                action.getDouble("humidity").toFloat(), action.getDouble("voltage").toFloat())
+            "deliverySettings" -> {
+                val settings = DeliverySettings(context)
+                val host = action.optString("smtpHost").trim(); val user = action.optString("smtpUser").trim()
+                val from = action.optString("smtpFrom").trim(); val bridge = action.optString("bridgeUrl").trim()
+                require(host.matches(Regex("[A-Za-z0-9.-]{0,253}")) && !user.contains('\n') &&
+                    (from.isEmpty() || DeliverySettings.validEmail(from))) { "SMTP inválido" }
+                settings.bridgeUrl = bridge
+                settings.smtpHost = host; settings.smtpUser = user; settings.smtpFrom = from
+                action.optString("smtpPassword").takeIf { it.isNotBlank() }?.let { settings.smtpPassword = it }
+                action.optString("bridgeToken").takeIf { it.isNotBlank() }?.let { settings.bridgeToken = it }
+            }
             "resolveAlert" -> store.resolveAlert(action.getString("id"))
             "addContact" -> {
                 val name = action.getString("name").trim()
@@ -415,8 +459,8 @@ internal class DemoHttpServer(
                     else -> throw IllegalArgumentException("Filtro inválido")
                 }
             }
-            "running" -> store.simulationRunning = action.getBoolean("value")
-            "offline" -> if (store.offlineDemo != action.getBoolean("value")) store.simulateDisconnection()
+            "running" -> { require(!store.liveMode); store.simulationRunning = action.getBoolean("value") }
+            "offline" -> { require(!store.liveMode); if (store.offlineDemo != action.getBoolean("value")) store.simulateDisconnection() }
             "channel" -> {
                 val channel = channel(action.getString("channel"))
                 val enabled = action.getBoolean("value")
@@ -424,6 +468,7 @@ internal class DemoHttpServer(
                 if (!enabled) store.enabledChannels.remove(channel)
             }
             "limit" -> {
+                require(!store.liveMode)
                 val value = action.getDouble("value").toFloat()
                 when (action.getString("key")) {
                     "temperature" -> { require(value in 20f..35f); store.temperatureLimit = value }

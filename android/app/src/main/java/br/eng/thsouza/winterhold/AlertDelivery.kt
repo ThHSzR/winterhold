@@ -66,18 +66,19 @@ internal class DeliverySettings(private val context: Context) {
     var smtpPassword: String
         get() = secret("smtpPassword")
         set(value) = secret("smtpPassword", value)
-    var metaPhoneNumberId: String
-        get() = prefs.getString("metaPhoneNumberId", "") ?: ""
-        set(value) { require(value.isEmpty() || value.matches(Regex("[0-9]{1,32}"))); prefs.edit().putString("metaPhoneNumberId", value).apply() }
-    var metaTemplateName: String
-        get() = prefs.getString("metaTemplateName", "") ?: ""
-        set(value) { require(value.isEmpty() || value.matches(Regex("[a-z0-9_]{1,100}"))); prefs.edit().putString("metaTemplateName", value).apply() }
-    var metaTemplateLanguage: String
-        get() = prefs.getString("metaTemplateLanguage", "pt_BR") ?: "pt_BR"
-        set(value) { require(value.matches(Regex("[a-z]{2}_[A-Z]{2}"))); prefs.edit().putString("metaTemplateLanguage", value).apply() }
-    var metaAccessToken: String
-        get() = secret("metaAccessToken")
-        set(value) = secret("metaAccessToken", value)
+    var bridgeUrl: String
+        get() = prefs.getString("bridgeUrl", "") ?: ""
+        set(value) {
+            require(value.isEmpty() || runCatching {
+                val url = URL(value)
+                (url.protocol == "https" || url.protocol == "http" && url.host in setOf("127.0.0.1", "localhost")) &&
+                    url.toURI().userInfo == null && url.query == null && url.ref == null && url.path.trimEnd('/') in setOf("", "/")
+            }.getOrDefault(false)) { "Use HTTPS ou HTTP local (127.0.0.1)" }
+            prefs.edit().putString("bridgeUrl", value.trimEnd('/')).apply()
+        }
+    var bridgeToken: String
+        get() = secret("bridgeToken")
+        set(value) = secret("bridgeToken", value)
     companion object {
         fun validEmail(value: String) = value.matches(Regex("[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,190}\\.[A-Za-z]{2,20}"))
     }
@@ -101,6 +102,15 @@ internal class AlertDelivery(private val context: Context) {
     fun prime(store: DemoStore) { knownEvents.addAll(store.events.map { it.id }) }
     fun dispatch(store: DemoStore, events: List<AlertEvent>) {
         events.filter { knownEvents.add(it.id) && !it.simulated && !it.resolved && it.severity != Severity.INFO }.forEach { event ->
+            deliver(store, event, false)
+        }
+    }
+    fun dispatchTest(store: DemoStore, event: AlertEvent) {
+        require(event.simulated && !store.liveMode && event.id in store.events.map { it.id })
+        knownEvents.add(event.id)
+        deliver(store, event, true)
+    }
+    private fun deliver(store: DemoStore, event: AlertEvent, test: Boolean) {
             val noticeId = "notice:${event.id}"
             if (ledger.getString(noticeId, null) == null) {
                 runCatching {
@@ -109,7 +119,7 @@ internal class AlertDelivery(private val context: Context) {
                         val intent = PendingIntent.getActivity(context, event.id.hashCode(), Intent(context, MainActivity::class.java),
                             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
                         notifications.notify(event.id, 0, Notification.Builder(context, "winterhold-alerts")
-                            .setSmallIcon(android.R.drawable.ic_dialog_alert).setContentTitle(event.title)
+                            .setSmallIcon(android.R.drawable.ic_dialog_alert).setContentTitle(if (test) "[TESTE] ${event.title}" else event.title)
                             .setContentText(event.detail).setStyle(Notification.BigTextStyle().bigText(event.detail))
                             .setContentIntent(intent).setAutoCancel(true).build())
                     }
@@ -122,19 +132,18 @@ internal class AlertDelivery(private val context: Context) {
                 if (channel == Channel.EMAIL && (settings.smtpHost.isBlank() || settings.smtpUser.isBlank() ||
                     settings.smtpFrom.isBlank() || settings.smtpPassword.isBlank())) return@forEach
                 if (channel == Channel.SMS && context.checkSelfPermission(Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) return@forEach
-                if (channel == Channel.WHATSAPP && (settings.metaPhoneNumberId.isBlank() ||
-                    settings.metaTemplateName.isBlank() || settings.metaAccessToken.isBlank())) return@forEach
+                if (channel == Channel.WHATSAPP && (settings.bridgeUrl.isBlank() || settings.bridgeToken.isBlank())) return@forEach
                 val id = "${event.id}:${contact.id}:${channel.name}"
                 if (ledger.getString(id, null) != null) return@forEach
                 runCatching { record(id, "reserved") }.onFailure { Log.e("Winterhold", "Registro de entrega falhou", it) }
                     .onSuccess {
-                        val message = "Winterhold | ${event.title}: ${event.detail}"
+                        val message = "Winterhold | ${if (test) "[TESTE] " else ""}${event.title}: ${event.detail}"
                         executor.execute {
                             runCatching {
                                 when (channel) {
                                     Channel.SMS -> sms(destination, message, id)
-                                    Channel.EMAIL -> { smtp(destination, event.title, message); record(id, "submitted") }
-                                    Channel.WHATSAPP -> { whatsapp(destination, event.title, event.detail); record(id, "submitted") }
+                                    Channel.EMAIL -> { smtp(destination, if (test) "[TESTE] ${event.title}" else event.title, message); record(id, "submitted") }
+                                    Channel.WHATSAPP -> { whatsapp(destination, message, id); record(id, "submitted") }
                                 }
                             }.onFailure { error ->
                                 Log.e("Winterhold", "Entrega ${channel.name} falhou para ${contact.id}", error)
@@ -144,7 +153,6 @@ internal class AlertDelivery(private val context: Context) {
                         }
                     }
             } }
-        }
     }
     private fun sms(to: String, body: String, id: String) {
         check(context.checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) { "Permissão de SMS ausente" }
@@ -162,29 +170,16 @@ internal class AlertDelivery(private val context: Context) {
         record(id, "queued")
         manager.sendMultipartTextMessage(to, null, parts, intents, null)
     }
-    private fun whatsapp(to: String, title: String, detail: String) {
-        val endpoint = URL("https://graph.facebook.com/v23.0/${settings.metaPhoneNumberId}/messages")
-        val parameters = org.json.JSONArray()
-            .put(JSONObject().put("type", "text").put("text", title.take(100)))
-            .put(JSONObject().put("type", "text").put("text", detail.take(250)))
-        val components = org.json.JSONArray().put(JSONObject().put("type", "body").put("parameters", parameters))
-        val request = JSONObject().put("messaging_product", "whatsapp")
-            .put("to", to.drop(1)).put("type", "template")
-            .put("template", JSONObject().put("name", settings.metaTemplateName)
-                .put("language", JSONObject().put("code", settings.metaTemplateLanguage))
-                .put("components", components))
-        val connection = endpoint.openConnection() as HttpURLConnection
+    private fun whatsapp(to: String, message: String, id: String) {
+        val connection = URL("${settings.bridgeUrl}/send").openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "POST"; connection.connectTimeout = 5000; connection.readTimeout = 10000
-            connection.doOutput = true
-            connection.setRequestProperty("Authorization", "Bearer ${settings.metaAccessToken}")
+            connection.instanceFollowRedirects = false; connection.doOutput = true
+            connection.setRequestProperty("Authorization", "Bearer ${settings.bridgeToken}")
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            connection.outputStream.use { it.write(request.toString().toByteArray(StandardCharsets.UTF_8)) }
-            check(connection.responseCode in 200..299) { "Meta WhatsApp: HTTP ${connection.responseCode}" }
-            val result = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-            check(result.optJSONArray("messages")?.optJSONObject(0)?.optString("id")?.isNotBlank() == true) {
-                "Meta não confirmou o envio"
-            }
+            connection.outputStream.use { it.write(JSONObject().put("id", id).put("to", to).put("message", message)
+                .toString().toByteArray(StandardCharsets.UTF_8)) }
+            check(connection.responseCode == 202) { "Ponte WhatsApp: HTTP ${connection.responseCode}" }
         } finally { connection.disconnect() }
     }
     private fun smtp(to: String, subject: String, message: String) {

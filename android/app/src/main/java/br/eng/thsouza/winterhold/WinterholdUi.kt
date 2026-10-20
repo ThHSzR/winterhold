@@ -268,11 +268,11 @@ private fun HomeScreen(store: DemoStore, modifier: Modifier,
     LazyColumn(modifier, contentPadding = PaddingValues(18.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item { PageTitle("Sua central", "ESP32 → celular → acesso web") }
-        if (store.liveMode && store.environments.isNotEmpty()) item {
+        if (store.currentEnvironments.isNotEmpty()) item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(store.environments.values.filter { it.favorite }.sortedBy { it.name }, key = { it.deviceId }) { profile ->
-                    FilterChip(selected = store.selectedDeviceId == profile.deviceId,
-                        onClick = { store.selectedDeviceId = profile.deviceId },
+                items(store.currentEnvironments.values.filter { it.favorite }.sortedBy { it.name }, key = { it.deviceId }) { profile ->
+                    FilterChip(selected = store.currentDeviceId == profile.deviceId,
+                        onClick = { store.selectEnvironment(profile.deviceId) },
                         label = { Text("${environmentIcon(profile.icon)} ${profile.name}") })
                 }
             }
@@ -326,7 +326,7 @@ private fun HomeScreen(store: DemoStore, modifier: Modifier,
             }
         }
         item { SectionTitle("Eventos recentes", "Ver todos", onAlerts) }
-        items(store.events.filter { if (store.liveMode) it.deviceId == store.selectedDeviceId else it.simulated }
+        items(store.events.filter { if (store.liveMode) !it.simulated && it.deviceId == store.selectedDeviceId else it.simulated && it.deviceId == store.selectedDemoId }
             .take(2), key = { it.id }) { event -> EventCard(event, store, compact = true) }
         item { Text("A central monitora e registra; nenhum comando é enviado ao ar-condicionado.",
             color = Muted, fontSize = 11.sp) }
@@ -480,14 +480,22 @@ private fun EventCard(event: AlertEvent, store: DemoStore, compact: Boolean = fa
 @Composable
 private fun AlertsScreen(store: DemoStore, modifier: Modifier) {
     var filter by remember { mutableStateOf("Todos") }
-    val filtered = store.events.filter { !it.simulated }.filter { when (filter) {
+    val filtered = store.events.filter { it.simulated != store.liveMode }.filter { when (filter) {
         "Abertos" -> !it.resolved
         "Resolvidos" -> it.resolved
         else -> true
     } }
     LazyColumn(modifier, contentPadding = PaddingValues(18.dp),
         verticalArrangement = Arrangement.spacedBy(15.dp)) {
-        item { PageTitle("Alertas", "Ocorrências reais e estado das entregas") }
+        item { PageTitle("Alertas", if (store.liveMode) "Ocorrências reais e estado das entregas" else "Eventos fictícios e testes de entrega") }
+        if (!store.liveMode) item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Teste explícito: envia aos destinatários configurados para a variável. Confira os destinos antes de disparar.", color = Muted, fontSize = 12.sp)
+                Metric.entries.forEach { metric -> OutlinedButton(onClick = {
+                    DemoCentral.sendTest(store.simulateAlert(metric))
+                }) { Text("Testar notificação · ${metric.label}") } }
+            }
+        }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("Todos", "Abertos", "Resolvidos").forEach { value ->
@@ -610,33 +618,54 @@ private fun EnvironmentsScreen(store: DemoStore, modifier: Modifier) {
     var showEditor by remember { mutableStateOf(false) }
     LazyColumn(modifier, contentPadding = PaddingValues(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { PageTitle("Ambientes", "Um ESP32 por ambiente · favoritos fixados no início") }
-        item { Button(onClick = { editing = null; showEditor = true }) {
+        item { PageTitle("Ambientes", if (store.liveMode) "Um ESP32 por ambiente · favoritos fixados no início" else "Cinco espaços fictícios · ajuste leituras e faixas") }
+        if (store.liveMode) item { Button(onClick = { editing = null; showEditor = true }) {
             Icon(Icons.Outlined.Add, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Adicionar ambiente")
         } }
-        if (store.environments.isEmpty()) item { Text("Nenhum ambiente ainda. Cadastre o DEVICE_ID do firmware ou aguarde a primeira leitura.", color = Muted) }
-        items(store.environments.values.sortedWith(compareByDescending<EnvironmentProfile> { it.favorite }.thenBy { it.name }), key = { it.deviceId }) { profile ->
+        if (!store.liveMode) item { DemoReadingEditor(store) }
+        if (store.currentEnvironments.isEmpty()) item { Text("Nenhum ambiente ainda. Cadastre o DEVICE_ID do firmware ou aguarde a primeira leitura.", color = Muted) }
+        items(store.currentEnvironments.values.sortedWith(compareByDescending<EnvironmentProfile> { it.favorite }.thenBy { it.name }), key = { it.deviceId }) { profile ->
             PanelCard { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(environmentIcon(profile.icon), fontSize = 26.sp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) { Text(profile.name, fontWeight = FontWeight.Bold); Text(profile.deviceId, color = Muted, fontSize = 12.sp) }
-                    IconButton(onClick = { store.saveEnvironment(profile.copy(favorite = !profile.favorite)) }) {
+                    IconButton(onClick = { if (store.liveMode) store.saveEnvironment(profile.copy(favorite = !profile.favorite)) else store.saveDemoEnvironment(profile.copy(favorite = !profile.favorite)) }) {
                         Icon(Icons.Outlined.Star, contentDescription = if (profile.favorite) "Desafixar do início" else "Fixar no início",
                             tint = if (profile.favorite) Amber else Muted)
                     }
                 }
-                StatusPill(if (store.lastSeen[profile.deviceId]?.let { store.now - it in 0..15_000L } == true) "ONLINE" else "SEM SINAL",
-                    if (store.lastSeen[profile.deviceId]?.let { store.now - it in 0..15_000L } == true) Ice else Red)
+                StatusPill(if (!store.liveMode) "DEMO" else if (store.lastSeen[profile.deviceId]?.let { store.now - it in 0..15_000L } == true) "ONLINE" else "SEM SINAL",
+                    if (!store.liveMode || store.lastSeen[profile.deviceId]?.let { store.now - it in 0..15_000L } == true) Ice else Red)
                 Text("${profile.temperatureMin.toInt()}–${profile.temperatureMax.toInt()} °C  ·  ${profile.humidityMin.toInt()}–${profile.humidityMax.toInt()}%  ·  ${profile.voltageMin.toInt()}–${profile.voltageMax.toInt()} V", color = Muted, fontSize = 12.sp)
-                Row { TextButton(onClick = { store.selectedDeviceId = profile.deviceId }) { Text("Ver no início") }
+                Row { TextButton(onClick = { store.selectEnvironment(profile.deviceId) }) { Text("Ver no início") }
                     TextButton(onClick = { editing = profile; showEditor = true }) { Text("Editar limites") } }
             } }
         }
     }
     if (showEditor) EnvironmentEditor(editing, { showEditor = false }) { profile ->
-        store.saveEnvironment(profile); store.selectedDeviceId = profile.deviceId; showEditor = false
+        if (store.liveMode) store.saveEnvironment(profile) else store.saveDemoEnvironment(profile)
+        store.selectEnvironment(profile.deviceId); showEditor = false
     }
+}
+
+@Composable
+private fun DemoReadingEditor(store: DemoStore) {
+    var temperature by remember(store.selectedDemoId) { mutableStateOf(store.latest.temperature?.toString() ?: "22") }
+    var humidity by remember(store.selectedDemoId) { mutableStateOf(store.latest.humidity?.toString() ?: "50") }
+    var voltage by remember(store.selectedDemoId) { mutableStateOf(store.latest.voltage?.toString() ?: "220") }
+    var feedback by remember { mutableStateOf("") }
+    PanelCard { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Definir leitura · ${store.selectedEnvironment?.name}", fontWeight = FontWeight.Bold)
+        OutlinedTextField(temperature, { temperature = it }, label = { Text("Temperatura °C") }, singleLine = true)
+        OutlinedTextField(humidity, { humidity = it }, label = { Text("Umidade %") }, singleLine = true)
+        OutlinedTextField(voltage, { voltage = it }, label = { Text("Tensão V") }, singleLine = true)
+        Button(onClick = { runCatching { store.setDemoReading(store.selectedDemoId,
+            temperature.replace(',', '.').toFloat(), humidity.replace(',', '.').toFloat(),
+            voltage.replace(',', '.').toFloat()) }.onSuccess { feedback = "Leitura fictícia atualizada" }
+            .onFailure { feedback = it.message.orEmpty() } }) { Text("Aplicar leitura") }
+        if (feedback.isNotEmpty()) Text(feedback, color = Amber)
+    } }
 }
 
 @Composable
@@ -650,11 +679,11 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
     var from by remember { mutableStateOf(deliverySettings.smtpFrom) }
     var password by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
-    var metaId by remember { mutableStateOf(deliverySettings.metaPhoneNumberId) }
-    var metaTemplate by remember { mutableStateOf(deliverySettings.metaTemplateName) }
-    var metaLanguage by remember { mutableStateOf(deliverySettings.metaTemplateLanguage) }
-    var metaToken by remember { mutableStateOf("") }
-    var metaMessage by remember { mutableStateOf("") }
+    var bridgeUrl by remember { mutableStateOf(deliverySettings.bridgeUrl) }
+    var bridgeToken by remember { mutableStateOf("") }
+    var bridgeMessage by remember { mutableStateOf("") }
+    var newWebUser by remember { mutableStateOf("") }
+    var webUserMessage by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { DemoCentral.refreshUrls() }
     LazyColumn(modifier, contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { PageTitle("Ajustes", "Integrações da central Android") }
@@ -664,14 +693,35 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
             DemoCentral.urls.forEach { url -> SelectionContainer { Text(url, color = Amber) }
                 TextButton(onClick = { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
                     .setPrimaryClip(ClipData.newPlainText("Winterhold web", url)) }) { Text("Copiar endereço") } }
-            Text("Chave de acesso web:", color = Muted, fontSize = 12.sp)
-            SelectionContainer { Text(DemoCentral.webSecret, color = Amber, fontSize = 12.sp) }
-            TextButton(onClick = { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                .setPrimaryClip(ClipData.newPlainText("Chave web", DemoCentral.webSecret)) }) { Text("Copiar chave web") }
             Text("HTTP na rede local; use VPN ou HTTPS no acesso externo.", color = Muted, fontSize = 12.sp)
             TextButton(onClick = { if (DemoCentral.active) CentralService.stop(context) else CentralService.start(context) }) {
                 Text(if (DemoCentral.active) "Parar central" else "Retomar central") }
             TextButton(onClick = { CentralService.requestBatterySetup(context) }) { Text("Configurar bateria") }
+        } } }
+        item { PanelCard { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionTitle("Usuários de acesso web")
+            Text("Gerencie as chaves somente no celular. A rotação invalida a chave antiga imediatamente.", color = Muted, fontSize = 12.sp)
+            DemoCentral.webUsers?.users?.forEach { access ->
+                Text("${access.name} · ${if (access.active) "ativo" else "desativado"}")
+                SelectionContainer { Text(access.key, color = Amber, fontSize = 12.sp) }
+                Row { TextButton(onClick = { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                    .setPrimaryClip(ClipData.newPlainText("Chave web", access.key)) }) { Text("Copiar") }
+                    TextButton(onClick = { DemoCentral.webUsers?.rotate(access.id) }) { Text("Trocar chave") }
+                    TextButton(onClick = { runCatching { DemoCentral.webUsers?.setActive(access.id, !access.active) }
+                        .onFailure { webUserMessage = it.message.orEmpty() } }) { Text(if (access.active) "Desativar" else "Ativar") } }
+            }
+            OutlinedTextField(newWebUser, { newWebUser = it }, label = { Text("Nome do novo usuário") }, singleLine = true)
+            TextButton(onClick = { runCatching { DemoCentral.webUsers?.add(newWebUser); newWebUser = "" }
+                .onFailure { webUserMessage = it.message.orEmpty() } }) { Text("Adicionar usuário") }
+            if (webUserMessage.isNotEmpty()) Text(webUserMessage, color = Amber)
+        } } }
+        item { PanelCard { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionTitle("Modo demonstração")
+            ToggleRow("Usar leituras fictícias", !store.liveMode) { enabled -> store.liveMode = !enabled; store.simulationRunning = enabled }
+            if (!store.liveMode) {
+                ToggleRow("Atualização automática", store.simulationRunning) { store.simulationRunning = it }
+                ToggleRow("Simular desconexão", store.offlineDemo) { if (it != store.offlineDemo) store.simulateDisconnection() }
+            }
         } } }
         item { PanelCard { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SectionTitle("ESP32 / MQTT")
@@ -690,13 +740,13 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
             if (!smsGranted) OutlinedButton(onClick = { smsPermission.launch(Manifest.permission.SEND_SMS) }) {
                 Text("Permitir envio de SMS neste aparelho")
             }
-            Text("Configure os destinatários em Equipe. Alertas simulados nunca são enviados.", color = Muted, fontSize = 12.sp)
+            Text("Configure os destinatários em Equipe. Apenas o comando explícito Testar notificação envia no modo demo.", color = Muted, fontSize = 12.sp)
         } } }
         item { PanelCard { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SectionTitle("E-mail · SMTP TLS (465)")
             OutlinedTextField(host, { host = it }, label = { Text("Servidor SMTP") }, singleLine = true)
             OutlinedTextField(user, { user = it }, label = { Text("Usuário") }, singleLine = true)
-            OutlinedTextField(from, { from = it }, label = { Text("Remetente @thsouza.eng.br") }, singleLine = true)
+            OutlinedTextField(from, { from = it }, label = { Text("E-mail do remetente") }, singleLine = true)
             OutlinedTextField(password, { password = it }, label = { Text("Senha / senha de aplicativo (deixe vazio para manter)") }, singleLine = true,
                 visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
             Button(onClick = { runCatching {
@@ -706,21 +756,17 @@ private fun SettingsScreen(store: DemoStore, modifier: Modifier) {
             if (message.isNotEmpty()) Text(message, color = Amber)
         } } }
         item { PanelCard { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SectionTitle("WhatsApp · Meta Cloud API")
-            Text("Envio direto do APK por HTTPS. Requer conta WhatsApp Business, token Meta e modelo aprovado com duas variáveis no corpo: título e detalhes.", color = Muted, fontSize = 12.sp)
-            OutlinedTextField(metaId, { metaId = it }, label = { Text("ID do número comercial na Meta") }, singleLine = true)
-            OutlinedTextField(metaTemplate, { metaTemplate = it }, label = { Text("Nome do modelo aprovado") }, singleLine = true)
-            OutlinedTextField(metaLanguage, { metaLanguage = it }, label = { Text("Idioma (ex.: pt_BR)") }, singleLine = true)
-            OutlinedTextField(metaToken, { metaToken = it }, label = { Text("Token Meta (deixe vazio para manter)") }, singleLine = true,
+            SectionTitle("WhatsApp · ponte Baileys")
+            Text("Node executa Baileys no backend; a central Android envia alertas à ponte por HTTPS (ou HTTP no próprio aparelho).", color = Muted, fontSize = 12.sp)
+            OutlinedTextField(bridgeUrl, { bridgeUrl = it }, label = { Text("URL da ponte HTTPS") }, singleLine = true)
+            OutlinedTextField(bridgeToken, { bridgeToken = it }, label = { Text("Chave da ponte (vazio mantém a atual)") }, singleLine = true,
                 visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
             Button(onClick = { runCatching {
-                deliverySettings.metaPhoneNumberId = metaId.trim()
-                deliverySettings.metaTemplateName = metaTemplate.trim()
-                deliverySettings.metaTemplateLanguage = metaLanguage.trim()
-                if (metaToken.isNotBlank()) deliverySettings.metaAccessToken = metaToken.trim()
-            }.onSuccess { metaToken = ""; metaMessage = "WhatsApp configurado no celular" }
-                .onFailure { metaMessage = it.message.orEmpty() } }) { Text("Salvar WhatsApp") }
-            if (metaMessage.isNotEmpty()) Text(metaMessage, color = Amber)
+                deliverySettings.bridgeUrl = bridgeUrl.trim()
+                if (bridgeToken.isNotBlank()) deliverySettings.bridgeToken = bridgeToken.trim()
+            }.onSuccess { bridgeToken = ""; bridgeMessage = "Ponte salva no celular" }
+                .onFailure { bridgeMessage = it.message.orEmpty() } }) { Text("Salvar WhatsApp") }
+            if (bridgeMessage.isNotEmpty()) Text(bridgeMessage, color = Amber)
         } } }
         item { Text("Destinatários: abra Alertas → Equipe.", color = Muted, fontSize = 12.sp) }
     }

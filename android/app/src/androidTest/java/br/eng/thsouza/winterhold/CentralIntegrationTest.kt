@@ -93,6 +93,10 @@ class CentralIntegrationTest {
         awaitCondition { request("/healthz").first == 200 }
         assertTrue(request("/").second.contains("Winterhold"))
         assertEquals(200, request("/api/v1/state").first)
+        val initialState = JSONObject(request("/api/v1/state").second)
+        assertEquals("esp", initialState.getString("mode"))
+        assertFalse(initialState.has("webUsers"))
+        assertTrue(initialState.getJSONObject("settings").getString("mqttSecret").isNotBlank())
         val environment = """{"type":"saveEnvironment","environment":{"id":"ci-esp","name":"Laboratório","icon":"lab","limits":{"temperatureMin":18,"temperatureMax":25,"humidityMin":30,"humidityMax":70,"voltageMin":198,"voltageMax":242}}}"""
         assertEquals(200, request("/api/v1/action", environment).first)
         assertEquals(400, request("/api/v1/action", environment.replace("\"temperatureMin\":18", "\"temperatureMin\":30")).first)
@@ -107,7 +111,17 @@ class CentralIntegrationTest {
         assertEquals(31.5, liveState.getJSONArray("samples").getJSONObject(0).getDouble("temperature"), 0.01)
         assertTrue(liveState.getJSONArray("events").getJSONObject(0).getString("title").contains("Temperatura"))
         assertEquals("ci-esp", liveState.getJSONArray("events").getJSONObject(0).getString("deviceId"))
-        request("/api/v1/action", """{"type":"mode","value":"demo"}""")
+        val demo = JSONObject(request("/api/v1/action", """{"type":"mode","value":"demo"}""").second)
+        assertEquals(5, demo.getJSONArray("devices").length())
+        val reading = """{"type":"setDemoReading","id":"demo_servidores","temperature":30,"humidity":40,"voltage":220}"""
+        assertEquals(200, request("/api/v1/action", reading).first)
+        val serverRoom = JSONObject(request("/api/v1/action", """{"type":"selectedDevice","value":"demo_servidores"}""").second)
+        assertEquals(30.0, serverRoom.getJSONArray("samples").getJSONObject(0).getDouble("temperature"), 0.01)
+        assertTrue(serverRoom.getJSONArray("events").getJSONObject(0).getBoolean("simulated"))
+        assertEquals(200, request("/api/v1/action", """{"type":"deliverySettings","smtpHost":"smtp.example.com","smtpUser":"demo","smtpFrom":"sender@example.com","bridgeUrl":""}""").first)
+        val config = JSONObject(request("/api/v1/state").second).getJSONObject("settings")
+        assertEquals("smtp.example.com", config.getString("smtpHost"))
+        assertFalse(config.has("smtpPassword"))
         assertEquals(200, request("/api/v1/action", """{"type":"running","value":false}""").first)
         assertEquals(200, request("/api/v1/action", """{"type":"limit","key":"temperature","value":29}""").first)
         awaitCondition {

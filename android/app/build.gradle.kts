@@ -12,8 +12,8 @@ android {
         applicationId = "br.eng.thsouza.winterhold"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.5-notificacoes"
+        versionCode = 6
+        versionName = "0.6-web-demo"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
