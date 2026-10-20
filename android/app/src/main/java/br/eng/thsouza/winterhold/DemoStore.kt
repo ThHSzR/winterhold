@@ -357,6 +357,7 @@ class DemoStore {
 
     internal fun savedJson(): String = JSONObject()
         .put("version", 5).put("tick", tick)
+        .put("activeViolations", JSONArray(activeViolations.sorted()))
         .put("readings", JSONArray(readings.map { JSONObject()
             .put("time", it.time).put("temperature", it.temperature)
             .put("humidity", it.humidity).put("voltage", it.voltage).put("deviceId", it.deviceId) }))
@@ -456,6 +457,15 @@ class DemoStore {
             else demoPresets
         val savedDemoId = root.optString("selectedDemoId", "demo_sala01").takeIf { it in demoPresets.map { preset -> preset.deviceId } }
             ?: "demo_sala01"
+        val savedViolations = if (root.has("activeViolations")) root.getJSONArray("activeViolations").strings().also { entries ->
+            require(entries.size <= 111)
+            entries.forEach { value ->
+                val parts = value.split(':')
+                require(parts.size == 4 && parts[0] in setOf("true", "false") &&
+                    parts[2] in Metric.entries.map { it.name } && parts[3] in setOf("min", "max"))
+                require((if (parts[0] == "true") savedDemoProfiles else savedProfiles).any { it.deviceId == parts[1] })
+            }
+        } else null
         require(savedProfiles.size <= 32 && savedProfiles.map { it.deviceId }.distinct().size == savedProfiles.size)
         require(savedSeen.keys.all { id -> savedProfiles.any { it.deviceId == id } })
         require(selected == null || savedProfiles.any { it.deviceId == selected })
@@ -477,6 +487,7 @@ class DemoStore {
                 activeViolations.add("${event.simulated}:$id:${event.metric!!.name}:$side")
             }
         }
+        if (savedViolations != null) { activeViolations.clear(); activeViolations.addAll(savedViolations) }
         events.clear(); events.addAll(savedEvents)
         contacts.clear(); contacts.addAll(savedContacts)
         enabledChannels.clear(); enabledChannels.addAll(channels.distinct())

@@ -5,6 +5,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DemoStoreTest {
+    @Test fun acknowledgingAndRestartingDoesNotRearmTheSameDemoViolation() {
+        val store = DemoStore().apply { liveMode = false }
+        val profile = store.demoEnvironments.getValue("demo_sala01")
+        store.setDemoReading(profile.deviceId, 30f, 50f, 220f).forEach { store.resolveAlert(it.id) }
+        val restored = DemoStore().apply { restoreJson(store.savedJson()); liveMode = false }
+        assertTrue(restored.setDemoReading(profile.deviceId, 31f, 50f, 220f).isEmpty())
+        assertEquals(1, restored.setDemoReading(profile.deviceId, 22f, 50f, 220f).size)
+        assertEquals(1, restored.setDemoReading(profile.deviceId, 30f, 50f, 220f).size)
+    }
     @Test fun demoTransitionsAreIndependentDeduplicatedAndRecoverable() {
         val store = DemoStore().apply { liveMode = false }
         store.demoEnvironments.values.toList().forEach { profile ->
