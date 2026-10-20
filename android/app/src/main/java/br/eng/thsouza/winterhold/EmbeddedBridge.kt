@@ -40,7 +40,7 @@ internal object EmbeddedBridge {
                 val directory = File(app.filesDir, "bridge-runtime")
                 val info = app.packageManager.getPackageInfo(app.packageName, 0)
                 @Suppress("DEPRECATION")
-                val version = (if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()).toString()
+                val version = (if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()).toString() + ":" + info.lastUpdateTime
                 val marker = File(directory, ".version")
                 if (marker.readTextOrNull() != version) {
                     directory.deleteRecursively(); directory.mkdirs()

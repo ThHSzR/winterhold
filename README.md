@@ -7,7 +7,7 @@ O Android é a central: recebe ESP32 por MQTT, avalia faixas por ambiente, mant�
 ```mermaid
 flowchart LR
     ESP[ESP32] -->|MQTT :1883| APK[Android · central]
-    APK -->|HTTP :8790| WEB[Web remota]
+    APK -->|HTTPS :8792| WEB[Web remota]
     APK -->|SMS e SMTP| DEST[Destinatários]
     APK -->|Processo privado do APK| NODE[Node 24 · Baileys integrado]
     NODE --> WA[WhatsApp]
@@ -22,7 +22,7 @@ O ESP publica `winterhold/<DEVICE_ID>/leituras` em MQTT 3.1.1 com usuário `wint
 3. Em **Ajustes → ESP32 / MQTT** (app ou web), copie a chave MQTT. Configure o IP do celular, credenciais e `DEVICE_ID` em `backend/include/config.h`; grave o firmware. Em **Ambientes**, configure as faixas e fixe favoritos.
 4. Para conhecer a interface sem sensores, ative **Ajustes → Demonstração**. Em **Ambientes**, selecione um dos cinco espaços, ajuste uma leitura fictícia e edite as faixas. Violações e normalizações enviam automaticamente SMS, e-mail e WhatsApp reais conforme destinos, métricas e canais. A ativação exige confirmação; mensagens levam `[SIMULADO]`. **Testar notificações** continua como ensaio explícito `[TESTE SIMULADO]`.
 
-A web usa HTTPS com certificado local e chave privada no Android Keystore (porta 8792). Confira o SHA-256 mostrado no APK antes de confiar no certificado. HTTP 8790 rejeita autenticação e API pela LAN; localhost via ADB é permitido para diagnóstico. Para acesso externo, prefira VPN. Credenciais de e-mail e da ponte WhatsApp são cifradas pelo Android Keystore e nunca retornam na API; a chave MQTT aparece nos ajustes web para usuários autenticados. Rotacione ou desative as chaves web pelo celular.
+A web usa HTTPS com certificado local e chave privada no Android Keystore (porta 8792). Confira o SHA-256 mostrado no APK antes de confiar no certificado. HTTP 8790 rejeita autenticação e API pela LAN; localhost via ADB é permitido para diagnóstico. Para acesso externo, prefira VPN. Credenciais de e-mail e da ponte WhatsApp são cifradas pelo Android Keystore e nunca retornam na API; a chave MQTT aparece nos ajustes web para usuários autenticados. Redefina senhas, desative contas ou revogue sessões pelo celular.
 
 ## Notificações
 

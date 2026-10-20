@@ -25,6 +25,9 @@ const dialogRoot = document.querySelector('#dialog-root');
 const connectionBanner = document.querySelector('#connection-banner');
 
 function showUnlock() {
+  dialog = null;
+  dialogRoot.innerHTML = '';
+  document.querySelector('#logout-button').hidden = true;
   backend = 'locked';
   connectionBanner.hidden = true;
   content.innerHTML = `<section class="card unlock-card"><span class="eyebrow">CENTRAL ANDROID</span><h1>Acessar Winterhold</h1><p>Use o usuário e a senha cadastrados nos Ajustes do aplicativo.</p><form id="unlock-form"><label class="form-field">Usuário<input name="username" autocomplete="username" required maxlength="40"></label><label class="form-field">Senha<input name="password" type="password" autocomplete="current-password" required maxlength="256"></label><button class="btn" type="submit">Entrar</button></form></section>`;

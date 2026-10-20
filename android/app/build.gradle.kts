@@ -18,6 +18,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug").apply {
+                storeFile = rootProject.file("debug.keystore")
+                storePassword = "android"; keyAlias = "androiddebugkey"; keyPassword = "android"
+            }
+        }
         release {
             isMinifyEnabled = false
         }

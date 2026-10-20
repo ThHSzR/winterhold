@@ -23,6 +23,10 @@ class DeviceSetupTest {
             val users = DemoCentral.webUsers!!
             val admin = users.users.first { it.username == "admin" }
             users.resetPassword(admin.id, password)
+            if (args.getString("resetTestState") == "true") {
+                DemoCentral.store.restoreJson(DemoStore().savedJson())
+                DeliverySettings(context).apply { smtpHost = ""; smtpUser = ""; smtpFrom = ""; smtpPassword = "" }
+            }
             DemoCentral.store.liveMode = true; DemoCentral.store.simulationRunning = false
         }
         val settings = DeliverySettings(context)

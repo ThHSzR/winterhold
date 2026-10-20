@@ -22,7 +22,7 @@ Em **Usuários de acesso web**, crie, edite, desative, exclua, redefina senhas e
 
 O modo real inicia ativo. Ao ativar **Demonstração**, confirme que leituras fictícias podem enviar SMS, e-mail e WhatsApp reais. Os cinco ambientes avaliam seus próprios mínimos/máximos tanto na atualização automática quanto manual. Uma ocorrência abre por ambiente/variável/lado da faixa, sem repetir em cada leitura; a normalização é notificada e permite novo disparo. Reconhecer o alerta na interface não libera repetição enquanto a leitura continuar fora da faixa. Mensagens externas levam `[SIMULADO]`; ensaios explícitos levam `[TESTE SIMULADO]`. Destinos e estados, incluindo bloqueio por falta de configuração/permissão, aparecem em Alertas → Ver entregas. A prévia web independente continua sem envios externos.
 
-O serviço Android em primeiro plano continua com a tela fechada e tenta retomar após boot/desbloqueio; otimizações agressivas de bateria e falta de rede podem interrompê-lo. **Parar central** fecha 8790/1883; retome pelo aplicativo. Saúde exibida na web é medida pelo Android. Não se consultam serviços externos do homelab.
+O serviço Android em primeiro plano continua com a tela fechada e tenta retomar após boot/desbloqueio; otimizações agressivas de bateria e falta de rede podem interrompê-lo. **Parar central** fecha 8790/8792/1883; retome pelo aplicativo. Saúde exibida na web é medida pelo Android. Não se consultam serviços externos do homelab.
 
 ## Notificações
 
@@ -41,3 +41,5 @@ curl -b cookies.txt http://127.0.0.1:8790/api/v1/state
 ```
 
 O workflow `.github/workflows/android-demo.yml` compila, roda testes e verifica emuladores Android 11 e 15. Veja também a [prévia web independente](../web/README.md).
+
+O APK de debug usa a chave pública de desenvolvimento `android/debug.keystore` para preservar atualizações entre builds. Use assinatura privada própria para produção.

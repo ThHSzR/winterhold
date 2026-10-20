@@ -1,10 +1,10 @@
 # Winterhold web
 
-A página em `http://IP_DO_CELULAR:8790/` é servida pelo **APK**. O celular recebe MQTT, avalia limites, persiste medições, envia alertas e exibe sua própria saúde. A web compartilha ambientes, destinatários, canais, SMTP, ponte WhatsApp, MQTT e modo demo com o aplicativo. Apenas a gestão dos usuários de acesso web e das suas chaves permanece exclusivamente no telefone.
+A página `https://IP_DO_CELULAR:8792/` é servida pelo APK, com os mesmos ambientes, destinatários, canais, SMTP, WhatsApp, MQTT e demo. A gestão de usuários, senhas e sessões existe somente no telefone.
 
-Em **Ajustes → Usuários de acesso web** no celular, copie uma chave pessoal. Insira-a na página; ela fica na sessão do navegador e acompanha as chamadas à API em `X-Winterhold-Key`. O navegador consulta `GET /api/v1/state`, aplica `POST /api/v1/action` e mostra a situação/QR da ponte via `GET /api/v1/bridge`. As credenciais secretas SMTP e WhatsApp são salvas cifradas no Android e não voltam nas respostas; a chave MQTT é visível na página autenticada. HTTP local não cifra tráfego: use VPN ou proxy HTTPS para acesso externo.
+Crie um login no APK e entre com usuário/senha. Confira o SHA-256 do certificado local nos Ajustes do APK antes de aceitá-lo no navegador. O cookie de sessão é HttpOnly/SameSite=Strict/Secure; credenciais SMTP/WhatsApp e hashes não retornam na API. HTTP 8790 rejeita a API pela LAN; localhost via ADB é permitido para diagnóstico. Rotas: POST `/api/v1/login`, POST `/api/v1/logout`, GET `/api/v1/state`, POST `/api/v1/action`, GET `/api/v1/bridge` (estado/QR) e POST `/api/v1/bridge` (novo pareamento). POST exige `X-Winterhold-Request: 1`.
 
-**Ambientes** cadastra um `DEVICE_ID` por ESP, edita faixas, nome e ícone e fixa favoritos. O modo demo, desligado após iniciar o APK, oferece cinco ambientes fictícios com leituras independentes e ajustáveis. **Alertas → Testar** pode enviar mensagens reais marcadas `[TESTE]` aos destinatários cadastrados; eventos demo automáticos só aparecem no painel. A ponte [Node/Baileys](../backend/whatsapp/README.md) é auxiliar opcional para WhatsApp; a web e a recepção MQTT continuam no APK sem Node/PM2.
+O demo oferece cinco ambientes independentes. Ao ativá-lo, confirme que violações/normalizações podem enviar mensagens reais conforme os filtros configurados; elas levam `[SIMULADO]`. O ensaio explícito leva `[TESTE SIMULADO]`. O Baileys acompanha o APK ARM64, com QR no aplicativo e na web. Consulte [implementação e limites](../docs/ISSUE_2.md).
 
 ## Prévia independente
 
