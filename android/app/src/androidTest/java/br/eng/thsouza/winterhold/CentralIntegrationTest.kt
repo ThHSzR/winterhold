@@ -140,7 +140,7 @@ class CentralIntegrationTest {
         val reopened = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         awaitCondition { request("/healthz").first == 200 }
-        val state = JSONObject(request("/api/v1/state").second)
+        val state = JSONObject(request("/api/v1/action", """{"type":"mode","value":"esp"}""").second)
         assertEquals(29, state.getJSONObject("limits").getInt("temperature"))
         assertEquals(230, state.getJSONObject("limits").getInt("nominalVoltage"))
         assertEquals("Laboratório", state.getJSONArray("devices").getJSONObject(0).getString("name"))

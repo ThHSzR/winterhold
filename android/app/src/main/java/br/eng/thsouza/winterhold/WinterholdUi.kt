@@ -441,7 +441,7 @@ private fun EventCard(event: AlertEvent, store: DemoStore, compact: Boolean = fa
                 Text(timeOf(event.time), color = Muted, fontSize = 11.sp)
             }
             Text(event.detail, color = Muted, fontSize = 12.sp)
-            event.deviceId?.let { id -> store.environments[id]?.let { environment ->
+            event.deviceId?.let { id -> (if (event.simulated) store.demoEnvironments[id] else store.environments[id])?.let { environment ->
                 Text("${environmentIcon(environment.icon)} ${environment.name} · $id", color = Ice, fontSize = 11.sp)
             } }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -465,7 +465,8 @@ private fun EventCard(event: AlertEvent, store: DemoStore, compact: Boolean = fa
             title = { Text("Entregas") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(if (event.simulated) "Evento simulado: sem envio." else "Tentativas por destinatário e canal:", color = Muted)
+                    Text(if (event.simulated && !event.title.startsWith("Teste de ")) "Evento simulado: sem envio."
+                        else "Tentativas por destinatário e canal:", color = Muted)
                     if (routes.isEmpty()) Text("Nenhum perfil ativo combina com este evento.")
                     routes.forEach { (contact, channels) ->
                         Text("${contact.name}: ${channels.joinToString { "${it.label} (${DemoCentral.deliveryStatus(event.id, contact.id, it) ?: "aguardando configuração"})" }}")
