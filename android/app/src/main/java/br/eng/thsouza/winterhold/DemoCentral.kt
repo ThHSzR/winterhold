@@ -305,7 +305,8 @@ internal class DemoHttpServer(
             val asset = assets[route] ?: return respond(socket, 404, "text/plain", ByteArray(0))
             val body = context.assets.open(asset.first).use { it.readBytes() }
             respond(socket, 200, asset.second, body, method == "HEAD")
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            android.util.Log.w("WinterholdHttp", "HTTP/TLS request failed: ${error.javaClass.simpleName}: ${error.message?.take(160)}")
             try { respond(socket, 500, "text/plain", ByteArray(0)) } catch (_: Exception) { }
         }
     }

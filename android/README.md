@@ -4,7 +4,7 @@ O APK Kotlin/Jetpack Compose é a central. Ele recebe MQTT dos ESP32, guarda his
 
 ## Instalar ou compilar
 
-Instale o [APK de debug](../dist/winterhold-demo-debug.apk) no Android 8+ (API 26). Instalações anteriores com assinatura diferente podem exigir desinstalação, que apaga os dados locais. Para compilar, abra `android/` no Android Studio com JDK 17 e SDK 36, ou execute `./gradlew :app:testDebugUnitTest :app:assembleDebug`. Saída: `app/build/outputs/apk/debug/app-debug.apk`.
+Instale o [APK de debug](../dist/winterhold-demo-debug.apk) no Android 8+ (API 26). Instalações anteriores com assinatura diferente podem exigir desinstalação, que apaga os dados locais. Antes de compilar o APK com runtime, execute `npm ci --omit=optional --ignore-scripts` em `backend/whatsapp`, instale `lief==0.17.6` no Python e rode `python android/prepare-runtime.py` na raiz. Os pacotes Android são fixados por URL/versão/SHA-256 em `android/runtime-lock.json`, com bibliotecas relocalizadas para o APK. Depois, abra `android/` no Android Studio com JDK 17 e SDK 36, ou execute `./gradlew :app:testDebugUnitTest :app:assembleDebug`. Saída: `app/build/outputs/apk/debug/app-debug.apk`.
 
 ## ESP32 e ambientes
 
@@ -14,15 +14,19 @@ A central escuta MQTT 3.1.1 na porta 1883, com `CONNECT`, `PUBLISH` QoS 0, `PING
 
 ## Web, usuários e demonstração
 
-Em **Ajustes → Web no celular**, abra `http://IP_DO_CELULAR:8790/` de outro dispositivo. Em **Usuários de acesso web** no app, crie usuários, copie, rotacione ou desative as chaves. Mantenha pelo menos um usuário ativo. A web pede uma chave, guarda-a só na sessão do navegador e usa `GET /api/v1/state`, `POST /api/v1/action` e `GET /api/v1/bridge` autenticados. A API não fornece a lista de usuários nem suas chaves. A rede local HTTP não cifra o tráfego; use VPN/proxy HTTPS externamente.
+Em **Ajustes → Web no celular**, abra `https://IP_DO_CELULAR:8792/`. O certificado é próprio do aparelho, com chave não exportável no Android Keystore: compare o SHA-256 exibido no APK antes de aceitá-lo no navegador. HTTP 8790 só admite autenticação/API de localhost, por exemplo `adb forward tcp:18790 tcp:8790`. Não há confiança em cabeçalhos de proxy.
 
-O modo real inicia ativo. Sem sensores, ative **Ajustes → Demonstração** no app ou na web: cinco ambientes fictícios têm faixas distintas, favoritos e históricos independentes. Em **Ambientes**, ajuste uma leitura fictícia; desvios criam apenas eventos locais. Em **Alertas → Testar**, escolha uma variável para enviar uma notificação marcada `[TESTE]` aos destinatários habilitados. Esse botão pode gerar custos de SMS ou e-mail; eventos fictícios automáticos não saem do aparelho. O modo demo não substitui nem mistura as leituras reais. Ao reiniciar, a central retorna ao modo real com a simulação pausada.
+Em **Usuários de acesso web**, crie, edite, desative, exclua, redefina senhas e revogue sessões. O primeiro login é `admin`; a senha inicial aparece apenas no processo de criação e pode ser redefinida no APK a qualquer momento. Senhas usam PBKDF2-HMAC-SHA256, salt individual e 210.000 iterações; nunca são retornadas na API. A web só oferece login/logout e cookie HttpOnly/SameSite=Strict (Secure no HTTPS), com sessão de oito horas. Reiniciar o processo exige novo login. Há limite por origem e global de tentativas. POST exige cabeçalho próprio e origem compatível. Rotas de administração web não existem.
+
+**Migração:** cada conta antiga recebe login `usuario1`, `usuario2` etc., mostrado no APK. Sua chave anterior funciona como senha temporária por sete dias após a atualização. Ela é convertida em hash; o texto original é removido. Redefina uma senha de 12–256 caracteres pelo APK. A atualização preserva histórico, destinatários e canais.
+
+O modo real inicia ativo. Ao ativar **Demonstração**, confirme que leituras fictícias podem enviar SMS, e-mail e WhatsApp reais. Os cinco ambientes avaliam seus próprios mínimos/máximos tanto na atualização automática quanto manual. Uma ocorrência abre por ambiente/variável/lado da faixa, sem repetir em cada leitura; a normalização é notificada e permite novo disparo. Reconhecer o alerta na interface não libera repetição enquanto a leitura continuar fora da faixa. Mensagens externas levam `[SIMULADO]`; ensaios explícitos levam `[TESTE SIMULADO]`. Destinos e estados, incluindo bloqueio por falta de configuração/permissão, aparecem em Alertas → Ver entregas. A prévia web independente continua sem envios externos.
 
 O serviço Android em primeiro plano continua com a tela fechada e tenta retomar após boot/desbloqueio; otimizações agressivas de bateria e falta de rede podem interrompê-lo. **Parar central** fecha 8790/1883; retome pelo aplicativo. Saúde exibida na web é medida pelo Android. Não se consultam serviços externos do homelab.
 
 ## Notificações
 
-Em **Equipe**, cadastre destinatários E.164 (`+5511999999999`) e e-mail, métricas e canais. Em **Ajustes → Canais**, habilite canais. Para SMS, permita `SEND_SMS` no telefone com SIM ativo. Para SMTP, informe qualquer servidor TLS na porta 465, usuário, remetente e senha de aplicativo; o certificado é validado. Para WhatsApp, configure URL HTTPS e chave da [ponte Node/Baileys](../backend/whatsapp/README.md), consulte o estado/QR pela web e pareie o telefone WhatsApp. A ponte é opcional e pode executar em outro host; a interface remota continua no APK. Segredos são cifrados com Android Keystore e omitidos das respostas web. A web pode alterar credenciais, mas apenas o telefone pode conceder permissões do sistema.
+Em **Equipe**, cadastre destinatários E.164 (`+5511999999999`) e e-mail, métricas e canais. Em **Ajustes → Canais**, habilite canais. Para SMS, permita `SEND_SMS` no telefone com SIM ativo. Para SMTP, informe qualquer servidor TLS na porta 465, usuário, remetente e senha de aplicativo; o certificado é validado. Para WhatsApp no A30/ARM64, o APK inicia seu próprio Node 24/Baileys em loopback 8791 com token privado. O QR aparece nos Ajustes do APK e na web; escaneie com a conta WhatsApp que enviará os alertas. A sessão fica em `files/whatsapp-session`, separada dos módulos, e sobrevive a atualização e reinício. **Novo pareamento** substitui a sessão local. A URL/token podem apontar para uma ponte HTTPS externa como alternativa. Segredos são cifrados com Android Keystore e omitidos das respostas web. A web pode alterar credenciais, mas apenas o telefone pode conceder permissões do sistema.
 
 Tentativas são reservadas antes do envio. `failed` e `uncertain` exigem conferência manual. `submitted` indica que o provedor aceitou a submissão, não entrega final; sem reenvio automático. Os estados aparecem em **Alertas → Ver entregas**.
 
@@ -31,7 +35,9 @@ Tentativas são reservadas antes do envio. `failed` e `uncertain` exigem confer�
 ```sh
 am start -W -n br.eng.thsouza.winterhold/.MainActivity
 curl -i http://127.0.0.1:8790/healthz
-curl -i -H "X-Winterhold-Key: CHAVE_WEB_DO_APK" http://127.0.0.1:8790/api/v1/state
+curl -c cookies.txt -H 'X-Winterhold-Request: 1' -H 'Content-Type: application/json' \
+  --data '{"username":"LOGIN_DO_APK","password":"SENHA_DO_APK"}' http://127.0.0.1:8790/api/v1/login
+curl -b cookies.txt http://127.0.0.1:8790/api/v1/state
 ```
 
 O workflow `.github/workflows/android-demo.yml` compila, roda testes e verifica emuladores Android 11 e 15. Veja também a [prévia web independente](../web/README.md).

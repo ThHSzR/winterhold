@@ -134,6 +134,7 @@ class CentralIntegrationTest {
         assertEquals("ci-esp", liveState.getJSONArray("events").getJSONObject(0).getString("deviceId"))
         val demo = JSONObject(request("/api/v1/action", """{"type":"mode","value":"demo","acknowledgeRealDelivery":true}""").second)
         assertEquals(5, demo.getJSONArray("devices").length())
+        assertEquals(200, request("/api/v1/action", """{"type":"running","value":false}""").first)
         val reading = """{"type":"setDemoReading","id":"demo_servidores","temperature":30,"humidity":40,"voltage":220}"""
         assertEquals(200, request("/api/v1/action", reading).first)
         val serverRoom = JSONObject(request("/api/v1/action", """{"type":"selectedDevice","value":"demo_servidores"}""").second)

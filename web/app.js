@@ -303,7 +303,7 @@ function settingsPage() {
         <label class="form-field">URL da ponte Node/Baileys<input name="bridgeUrl" type="url" value="${escapeHtml(config.bridgeUrl || '')}" placeholder="https://ponte.exemplo.com"></label>
         <label class="form-field">Chave da ponte (vazio mantém a atual)<input name="bridgeToken" type="password" autocomplete="new-password"></label>
         <button class="btn" type="submit">Salvar integrações</button>
-      </form><button class="btn secondary" data-action="bridge-status">Ver conexão e QR do WhatsApp</button><div id="bridge-status" role="status"></div>
+      </form><button class="btn secondary" data-action="bridge-status">Ver conexão e QR do WhatsApp</button><button class="btn ghost" data-action="bridge-relink">Novo pareamento</button><div id="bridge-status" role="status"></div>
       <p>Credenciais são guardadas no Android e não são devolvidas pela API. Use HTTPS na ponte; HTTP só é aceito para 127.0.0.1 no aparelho.</p></section>`;
 }
 

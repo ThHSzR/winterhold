@@ -1,3 +1,9 @@
+# Baileys no APK e ponte alternativa
+
+O APK ARM64 inclui Node 24 e os módulos fixados no lockfile. O aplicativo prepara e supervisiona a ponte local sem Termux/PM2. Pareamento QR e estado ficam no APK e na web autenticada. Consulte [implementação e validação](../../docs/ISSUE_2.md).
+
+As instruções abaixo são para hospedar opcionalmente a ponte fora do APK. Use `npm ci --omit=optional --ignore-scripts`, Node 22+ e preserve o diretório privado de sessão.
+
 # Ponte WhatsApp Node/Baileys
 
 Processo auxiliar **opcional** para WhatsApp. O Android continua recebendo MQTT, avaliando alertas e servindo a única interface web remota. A ponte recebe apenas mensagens de saída do APK; não consulta sensores nem outros serviços do homelab. Baileys é uma integração não oficial do WhatsApp Web, que pode quebrar com alterações do protocolo ou restrições da conta. O projeto não depende de token Meta ou Termux.

@@ -2,14 +2,14 @@
 
 **[Baixar APK Android diretamente](https://raw.githubusercontent.com/ThHSzR/winterhold/main/dist/winterhold-demo-debug.apk)** · [Instalação e execução](android/README.md)
 
-O Android é a central: recebe ESP32 por MQTT, avalia faixas por ambiente, mantém histórico e alertas e serve a interface web em `http://IP_DO_CELULAR:8790/`. O navegador usa o mesmo estado e oferece os ajustes do aplicativo. **Somente a gestão de usuários e chaves de acesso web fica no celular.** Sem ESP conectado, ative a demonstração no app ou na web; ela oferece cinco ambientes fictícios independentes, leituras ajustáveis e testes explícitos de notificação.
+O Android é a central: recebe ESP32 por MQTT, avalia faixas por ambiente, mantém histórico e alertas e serve a interface web em `https://IP_DO_CELULAR:8792/`. O navegador usa o mesmo estado e oferece os ajustes do aplicativo. **Somente a gestão de usuários, senhas e sessões web fica no celular.** Sem ESP conectado, ative a demonstração no app ou na web; ela oferece cinco ambientes fictícios independentes, leituras ajustáveis e testes explícitos de notificação.
 
 ```mermaid
 flowchart LR
     ESP[ESP32] -->|MQTT :1883| APK[Android · central]
     APK -->|HTTP :8790| WEB[Web remota]
     APK -->|SMS e SMTP| DEST[Destinatários]
-    APK -->|HTTPS · alertas| NODE[Ponte Node · Baileys]
+    APK -->|Processo privado do APK| NODE[Node 24 · Baileys integrado]
     NODE --> WA[WhatsApp]
 ```
 
@@ -18,14 +18,14 @@ O ESP publica `winterhold/<DEVICE_ID>/leituras` em MQTT 3.1.1 com usuário `wint
 ## Começar
 
 1. Instale o [APK](https://raw.githubusercontent.com/ThHSzR/winterhold/main/dist/winterhold-demo-debug.apk) no Android 8+. Abra o aplicativo e conceda notificações e operação contínua quando necessário.
-2. Em **Ajustes → Usuários de acesso web**, copie a chave do administrador ou crie uma chave por pessoa. Abra o endereço indicado em **Ajustes → Web no celular** a partir da mesma rede e informe sua chave.
+2. Em **Ajustes → Usuários de acesso web**, anote a senha inicial ou defina uma nova e crie um login por pessoa. Abra o endereço HTTPS indicado, confira a impressão SHA-256 do certificado com o APK e entre com usuário e senha. Gestão de contas e revogação de sessões existem apenas no APK.
 3. Em **Ajustes → ESP32 / MQTT** (app ou web), copie a chave MQTT. Configure o IP do celular, credenciais e `DEVICE_ID` em `backend/include/config.h`; grave o firmware. Em **Ambientes**, configure as faixas e fixe favoritos.
-4. Para conhecer a interface sem sensores, ative **Ajustes → Demonstração**. Em **Ambientes**, selecione um dos cinco espaços, ajuste uma leitura fictícia e edite as faixas. **Alertas → Testar notificações** pode enviar SMS, e-mail e WhatsApp reais aos destinos que você configurar; eventos fictícios automáticos não enviam mensagens.
+4. Para conhecer a interface sem sensores, ative **Ajustes → Demonstração**. Em **Ambientes**, selecione um dos cinco espaços, ajuste uma leitura fictícia e edite as faixas. Violações e normalizações enviam automaticamente SMS, e-mail e WhatsApp reais conforme destinos, métricas e canais. A ativação exige confirmação; mensagens levam `[SIMULADO]`. **Testar notificações** continua como ensaio explícito `[TESTE SIMULADO]`.
 
-A rede local usa HTTP sem criptografia. Para acesso fora dela, use VPN ou proxy HTTPS. Credenciais de e-mail e da ponte WhatsApp são cifradas pelo Android Keystore e nunca retornam na API; a chave MQTT aparece nos ajustes web para usuários autenticados. Rotacione ou desative as chaves web pelo celular.
+A web usa HTTPS com certificado local e chave privada no Android Keystore (porta 8792). Confira o SHA-256 mostrado no APK antes de confiar no certificado. HTTP 8790 rejeita autenticação e API pela LAN; localhost via ADB é permitido para diagnóstico. Para acesso externo, prefira VPN. Credenciais de e-mail e da ponte WhatsApp são cifradas pelo Android Keystore e nunca retornam na API; a chave MQTT aparece nos ajustes web para usuários autenticados. Rotacione ou desative as chaves web pelo celular.
 
 ## Notificações
 
-O aplicativo envia SMS pelo SIM, e-mail por SMTP TLS implícito na porta 465 e WhatsApp por uma [ponte Node com Baileys](backend/whatsapp/README.md). A ponte é **opcional e separada**: o APK continua sendo a única central e a única interface web remota, mas um processo Node precisa estar disponível para WhatsApp. Não depende de Termux nem de token Meta. É uma integração não oficial do WhatsApp; requer pareamento por QR e pode mudar com o protocolo. Os envios são reservados antes da chamada externa e não são repetidos automaticamente; `submitted` não comprova entrega no aparelho do destinatário. Veja o [guia Android](android/README.md).
+O aplicativo envia SMS pelo SIM, e-mail por SMTP TLS na porta 465 e WhatsApp pelo Node/Baileys **incluído no APK ARM64**. O APK extrai os módulos privados, inicia e supervisiona o processo e preserva a sessão. Não requer Termux, PM2 ou instalação manual de Node. O QR aparece em Ajustes no APK e na web autenticada; use **Novo pareamento** para substituir uma sessão. Uma ponte HTTPS externa continua disponível como alternativa em outras ABIs. É uma integração não oficial e pode exigir atualização do APK quando o protocolo mudar. Os envios são reservados antes da chamada externa e não são repetidos automaticamente; `submitted` comprova submissão ao provedor, sem garantir entrega final. Veja [a implementação e validação da issue #2](docs/ISSUE_2.md).
 
 O histórico é um arquivo privado atômico do app. Limpar dados ou desinstalar apaga histórico e configurações. A medição AC requer calibração e validação elétrica supervisionada antes de ser considerada confiável. Não há comando infravermelho para ligar ou desligar o ar-condicionado.

@@ -37,6 +37,8 @@ internal object WebTls {
             override fun getCertificateChain(alias: String?) = chain
             override fun getServerAliases(type: String?, issuers: Array<out Principal>?) = arrayOf(ALIAS)
             override fun chooseServerAlias(type: String?, issuers: Array<out Principal>?, socket: Socket?) = if (type == "RSA") ALIAS else null
+            override fun chooseEngineServerAlias(type: String?, issuers: Array<out Principal>?, engine: javax.net.ssl.SSLEngine?) =
+                if (type == "RSA") ALIAS else null
             override fun getClientAliases(type: String?, issuers: Array<out Principal>?) = null
             override fun chooseClientAlias(types: Array<out String>?, issuers: Array<out Principal>?, socket: Socket?) = null
         }
