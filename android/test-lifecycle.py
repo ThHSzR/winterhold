@@ -46,6 +46,7 @@ def recovered():
     login();state,_=request('state');return state['limits']['temperature']==29 and state['running'] is False
 # No force-stop: emulate a system kill and require START_STICKY recovery.
 adb('root');adb('wait-for-device')
+adb('forward','tcp:18790','tcp:8790')
 pid=adb('shell','pidof',package);adb('shell','kill','-9',pid)
 wait_for(recovered)
 print('START_STICKY and persisted settings passed')
