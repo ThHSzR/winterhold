@@ -22,7 +22,13 @@ O arquivo `android/debug.keystore` é uma chave **pública de desenvolvimento**,
 
 ## Validação
 
-Os resultados finais e as limitações da validação física são registrados ao concluir os testes. A instrumentação usa receptor HTTP local para comprovar o fluxo de mensagens sem enviar a pessoas reais. O pareamento da conta WhatsApp e a confirmação de uma entrega externa exigem a participação do proprietário da conta.
+- **14 testes unitários Android**: limites próprios dos cinco ambientes, atualização automática/manual, min/max, normalização, deduplicação, reconhecimento e reinício sem rearmar a mesma violação, persistência e MQTT.
+- **8 testes web**: conexão por sessão, reconexão, ambientes, escape de conteúdo e servidor da prévia.
+- **Instrumentação Android 11 e 15 em CI**: login, HTTPS com certificado fixado, logout, revogação, redefinição de senha, limitação de tentativas, ausência de administração web, MQTT e persistência. Teste de cinco ambientes passa pelo endpoint HTTP real da central e registra dez ou mais mensagens simuladas/normalizações num receptor HTTP local, sem enviar a pessoas reais. Canais sem credenciais/permissões registram bloqueios.
+- **A30 físico (SM-A305GT, Android 11/API 30, ARM64)**: instalação, Node privado do APK chegando ao QR, HTTPS com verificação de impressão do certificado via ADB e pela LAN, bloqueio da API HTTP na LAN (403), testes de segurança/entrega, parada/retomada da central e recuperação após interrupção do processo passaram. Um reboot real iniciou a central e o Node pelo BootReceiver, sem reabrir a atividade; as credenciais web e o diretório privado da ponte permaneceram disponíveis. O modo voltou a real com demo pausado.
+- APK de debug: **61.192.374 bytes (58,36 MiB)**, dez ELFs ARM64. Módulos extraídos ocupam aproximadamente 47,3 MiB, além das bibliotecas nativas e do APK. Nenhum addon npm nativo está presente. O pacote foi verificado como ZIP íntegro.
+
+**Pendente por decisão do usuário:** o pareamento da conta WhatsApp foi adiado. Não se considera validado envio a um destinatário WhatsApp real, preservação de uma sessão já pareada após boot ou reconexão dessa sessão após perda de rede. O runtime e o fluxo até o QR foram verificados; os envios automáticos foram comprovados com receptor local. SMS real e SMTP externo também dependem de SIM/permissão e credenciais/destinatários fornecidos pelo proprietário. A issue permanece aberta para esse aceite físico.
 
 ## Limites
 
@@ -30,4 +36,3 @@ Os resultados finais e as limitações da validação física são registrados a
 - O APK com runtime é ARM64 e tem tamanho maior que a versão anterior. Não há alegação de compatibilidade com todas as ABIs/versões Android.
 - O Android pode interromper a central por parada forçada, falta de recursos, restrições de bateria ou rede. O serviço usa operação em primeiro plano, bloqueios de CPU/Wi-Fi e retomada após boot/desbloqueio. Parada forçada exige reabertura manual.
 - Estados `failed`/`uncertain` exigem conferência antes de qualquer tentativa manual. Não há repetição automática de mensagens de estado incerto.
-
