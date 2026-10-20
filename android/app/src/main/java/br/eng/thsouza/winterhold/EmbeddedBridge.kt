@@ -38,7 +38,9 @@ internal object EmbeddedBridge {
         worker.execute {
             try {
                 val directory = File(app.filesDir, "bridge-runtime")
-                val version = app.packageManager.getPackageInfo(app.packageName, 0).longVersionCode.toString()
+                val info = app.packageManager.getPackageInfo(app.packageName, 0)
+                @Suppress("DEPRECATION")
+                val version = (if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()).toString()
                 val marker = File(directory, ".version")
                 if (marker.readTextOrNull() != version) {
                     directory.deleteRecursively(); directory.mkdirs()
@@ -65,6 +67,7 @@ internal object EmbeddedBridge {
                     put("WINTERHOLD_BRIDGE_TOKEN", settings.bridgeToken)
                     put("WINTERHOLD_BRIDGE_DATA", File(app.filesDir, "whatsapp-session").absolutePath)
                     put("WINTERHOLD_BRIDGE_HOST", "127.0.0.1"); put("WINTERHOLD_BRIDGE_PORT", "8791")
+                    put("WINTERHOLD_ANDROID_PARENT", android.os.Process.myPid().toString())
                 }
                 synchronized(this) {
                     if (!wanted) { starting = false; return@execute }

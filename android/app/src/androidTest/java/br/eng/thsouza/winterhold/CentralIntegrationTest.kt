@@ -65,7 +65,7 @@ class CentralIntegrationTest {
             if (runCatching(check).onFailure { lastError = it }.getOrDefault(false)) return
             Thread.sleep(100)
         }
-        throw AssertionError("Central nÃ£o atingiu o estado esperado: ${DemoCentral.status}", lastError)
+        throw AssertionError("Central não atingiu o estado esperado: ${DemoCentral.status}", lastError)
     }
 
     private fun publishMqttSample() {
@@ -118,7 +118,7 @@ class CentralIntegrationTest {
         assertEquals("esp", initialState.getString("mode"))
         assertFalse(initialState.has("webUsers"))
         assertTrue(initialState.getJSONObject("settings").getString("mqttSecret").isNotBlank())
-        val environment = """{"type":"saveEnvironment","environment":{"id":"ci-esp","name":"LaboratÃ³rio","icon":"lab","limits":{"temperatureMin":18,"temperatureMax":25,"humidityMin":30,"humidityMax":70,"voltageMin":198,"voltageMax":242}}}"""
+        val environment = """{"type":"saveEnvironment","environment":{"id":"ci-esp","name":"Laboratório","icon":"lab","limits":{"temperatureMin":18,"temperatureMax":25,"humidityMin":30,"humidityMax":70,"voltageMin":198,"voltageMax":242}}}"""
         assertEquals(200, request("/api/v1/action", environment).first)
         assertEquals(400, request("/api/v1/action", environment.replace("\"temperatureMin\":18", "\"temperatureMin\":30")).first)
         publishMqttSample()
@@ -127,7 +127,7 @@ class CentralIntegrationTest {
         }
         val liveState = JSONObject(request("/api/v1/action", """{"type":"mode","value":"esp"}""").second)
         assertEquals("ci-esp", liveState.getString("selectedDeviceId"))
-        assertEquals("LaboratÃ³rio", liveState.getJSONArray("devices").getJSONObject(0).getString("name"))
+        assertEquals("Laboratório", liveState.getJSONArray("devices").getJSONObject(0).getString("name"))
         assertEquals("lab", liveState.getJSONArray("devices").getJSONObject(0).getString("icon"))
         assertEquals(31.5, liveState.getJSONArray("samples").getJSONObject(0).getDouble("temperature"), 0.01)
         assertTrue(liveState.getJSONArray("events").getJSONObject(0).getString("title").contains("Temperatura"))
@@ -164,7 +164,7 @@ class CentralIntegrationTest {
         val state = JSONObject(request("/api/v1/action", """{"type":"mode","value":"esp"}""").second)
         assertEquals(29, state.getJSONObject("limits").getInt("temperature"))
         assertEquals(230, state.getJSONObject("limits").getInt("nominalVoltage"))
-        assertEquals("LaboratÃ³rio", state.getJSONArray("devices").getJSONObject(0).getString("name"))
+        assertEquals("Laboratório", state.getJSONArray("devices").getJSONObject(0).getString("name"))
         assertFalse(state.getBoolean("running"))
         assertEquals(400, request("/api/v1/action", """{"type":"limit","key":"temperature","value":900}""").first)
         instrumentation.runOnMainSync { reopened.finish() }

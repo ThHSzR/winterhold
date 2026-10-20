@@ -90,6 +90,9 @@ while needed:
             elf.remove(entry)
         elif isinstance(entry, lief.ELF.DynamicSharedObject):
             entry.name = sonames[name]
+    for requirement in elf.symbols_version_requirement:
+        if requirement.name in sonames:
+            requirement.name = sonames[requirement.name]
     elf.write(str(output / sonames[name]))
 assets = root / 'app/src/main/assets/bridge'
 assets.mkdir(parents=True, exist_ok=True)

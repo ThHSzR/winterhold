@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import * as demo from '../demo.js';
 
-test('web conecta com sessão e retoma o APK apÃ³s indisponibilidade sem usar dados da prÃ©via', async () => {
+test('web conecta com sessão e retoma o APK após indisponibilidade sem usar dados da prévia', async () => {
   const source = (await readFile(new URL('../app.js', import.meta.url), 'utf8'))
     .replace(/^import[\s\S]*?from '\.\/demo\.js';\s*/, '');
   const elements = new Map();

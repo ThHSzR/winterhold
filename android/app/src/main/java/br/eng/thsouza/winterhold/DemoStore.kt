@@ -469,12 +469,12 @@ class DemoStore {
         liveMode = true
         selectedDeviceId = selected
         activeViolations.clear(); disconnected.clear()
-        savedEvents.filter { !it.simulated && !it.resolved && it.metric != null }.forEach { event ->
-            event.detail.substringBefore(" ·").takeIf { it in savedSeen }?.let { id ->
-                val bound = environments[id]?.bounds(event.metric!!)
-                val reading = savedLive.firstOrNull { it.deviceId == id }?.value(event.metric!!)
+        savedEvents.filter { !it.resolved && it.metric != null && !it.title.startsWith("Teste de") }.forEach { event ->
+            event.deviceId?.takeIf { if (event.simulated) it in demoEnvironments else it in savedSeen }?.let { id ->
+                val bound = (if (event.simulated) demoEnvironments[id] else environments[id])?.bounds(event.metric!!)
+                val reading = (if (event.simulated) savedReadings else savedLive).firstOrNull { it.deviceId == id }?.value(event.metric!!)
                 val side = if (reading != null && bound != null && reading < bound.first) "min" else "max"
-                activeViolations.add("false:$id:${event.metric!!.name}:$side")
+                activeViolations.add("${event.simulated}:$id:${event.metric!!.name}:$side")
             }
         }
         events.clear(); events.addAll(savedEvents)

@@ -83,3 +83,7 @@ http.createServer(async (req, res) => {
 }).listen(port, host, () => console.log(`Ponte Baileys em ${host}:${port}`));
 
 process.on('SIGTERM', () => { clearTimeout(reconnectTimer); socket?.end(undefined); process.exit(0); });
+// The Android foreground service owns this process, including abrupt parent death.
+if (process.env.WINTERHOLD_ANDROID_PARENT) setInterval(() => {
+  if (process.ppid !== Number(process.env.WINTERHOLD_ANDROID_PARENT)) process.exit(0);
+}, 2000).unref();

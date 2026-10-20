@@ -21,7 +21,7 @@ import java.net.URL
 @Composable
 internal fun BridgePairingPanel() {
     val app = LocalContext.current.applicationContext
-    var state by remember { mutableStateOf("Consultando WhatsAppâ€¦") }
+    var state by remember { mutableStateOf("Consultando WhatsApp…") }
     var qr by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -56,6 +56,6 @@ internal fun BridgePairingPanel() {
     Column {
         Text(state)
         qr?.let { Image(it.asImageBitmap(), "QR para vincular WhatsApp", Modifier.size(240.dp)) }
-        Text("No WhatsApp do telefone da conta, abra Aparelhos conectados e escaneie o QR. O pareamento tambÃ©m aparece na web.")
+        Text("No WhatsApp do telefone da conta, abra Aparelhos conectados e escaneie o QR. O pareamento também aparece na web.")
     }
 }

@@ -37,7 +37,7 @@ object DemoCentral {
     private val main = Handler(Looper.getMainLooper())
     private var server: DemoHttpServer? = null
     private var mqtt: MqttIngress? = null
-    var mqttStatus by mutableStateOf("MQTT aguardando inicializaÃ§Ã£o")
+    var mqttStatus by mutableStateOf("MQTT aguardando inicialização")
         private set
     var mqttSecret by mutableStateOf("")
         private set
@@ -54,7 +54,7 @@ object DemoCentral {
         private set
     var active by mutableStateOf(false)
         private set
-    var status by mutableStateOf("Aguardando inicializaÃ§Ã£o")
+    var status by mutableStateOf("Aguardando inicialização")
         private set
     var urls by mutableStateOf(emptyList<String>())
         private set
@@ -104,7 +104,7 @@ object DemoCentral {
         persistence?.save(json) {
             main.post {
                 lastSaved = null
-                persistenceStatus = "NÃ£o foi possÃ­vel salvar os dados locais"
+                persistenceStatus = "Não foi possível salvar os dados locais"
             }
         }
     }
@@ -122,12 +122,12 @@ object DemoCentral {
             server = DemoHttpServer(context.applicationContext, store).also { it.start() }
             startMqtt()
             active = true
-            status = "Central ativa Â· web na porta $PORT"
+            status = "Central ativa · web na porta $PORT"
             refreshUrls()
             save()
             main.postDelayed(advance, 5_000)
         } catch (error: Exception) {
-            status = "NÃ£o foi possÃ­vel iniciar a web: ${error.message}"
+            status = "Não foi possível iniciar a web: ${error.message}"
         }
     }
 
@@ -138,7 +138,7 @@ object DemoCentral {
             }).also { it.start() }
             mqttStatus = "Recebendo MQTT na porta 1883"
         } catch (error: Exception) {
-            mqttStatus = "MQTT indisponÃ­vel: ${error.message}"
+            mqttStatus = "MQTT indisponível: ${error.message}"
         }
     }
 
@@ -157,7 +157,7 @@ object DemoCentral {
     }
 
     fun reportStartFailure(error: Exception) {
-        status = "NÃ£o foi possÃ­vel iniciar a central: ${error.message}"
+        status = "Não foi possível iniciar a central: ${error.message}"
     }
 
     fun refreshUrls() {
@@ -251,11 +251,11 @@ internal class DemoHttpServer(
                     val action = readBody(input, headers)
                     val (code, session) = DemoCentral.webUsers!!.login(action.optString("username"), action.optString("password"), socket.inetAddress.hostAddress.orEmpty())
                     return respond(socket, code, "application/json", (if (code == 200) "{\"status\":\"authenticated\"}" else
-                        "{\"error\":\"${if (code == 429) "Muitas tentativas; aguarde 60 segundos" else "UsuÃ¡rio ou senha invÃ¡lidos"}\"}").toByteArray(),
+                        "{\"error\":\"${if (code == 429) "Muitas tentativas; aguarde 60 segundos" else "Usuário ou senha inválidos"}\"}").toByteArray(),
                         extra = if (session != null) "Set-Cookie: winterhold_session=$session; Path=/; HttpOnly; SameSite=Strict; Max-Age=28800${if (secure) "; Secure" else ""}\r\n" else "")
                 }
                 if (DemoCentral.webUsers?.acceptsSession(token) != true)
-                    return respond(socket, 401, "application/json", "{\"error\":\"Entre com usuÃ¡rio e senha\"}".toByteArray())
+                    return respond(socket, 401, "application/json", "{\"error\":\"Entre com usuário e senha\"}".toByteArray())
                 if (route == "/api/v1/logout" && method == "POST") {
                     DemoCentral.webUsers?.logout(token)
                     return respond(socket, 200, "application/json", "{}".toByteArray(), extra =
@@ -272,7 +272,7 @@ internal class DemoHttpServer(
                             connection.connectTimeout = 3000; connection.readTimeout = 5000
                             connection.instanceFollowRedirects = false
                             connection.setRequestProperty("Authorization", "Bearer ${settings.bridgeToken}")
-                            require(connection.responseCode == 200) { "Ponte indisponÃ­vel: HTTP ${connection.responseCode}" }
+                            require(connection.responseCode == 200) { "Ponte indisponível: HTTP ${connection.responseCode}" }
                             val body = java.io.ByteArrayOutputStream()
                             connection.inputStream.use { stream ->
                                 val chunk = ByteArray(4096)
@@ -297,7 +297,7 @@ internal class DemoHttpServer(
                     return respond(socket, 200, "application/json", json.toString().toByteArray(StandardCharsets.UTF_8))
                 } catch (error: IllegalArgumentException) {
                     return respond(socket, 400, "application/json",
-                        JSONObject().put("error", error.message ?: "AÃ§Ã£o invÃ¡lida").toString().toByteArray())
+                        JSONObject().put("error", error.message ?: "Ação inválida").toString().toByteArray())
                 }
             }
             if (method != "GET" && method != "HEAD") return respond(socket, 405, "text/plain", ByteArray(0))
@@ -311,7 +311,7 @@ internal class DemoHttpServer(
 
     private fun readBody(input: BufferedInputStream, headers: Map<String, String>): JSONObject {
         val length = headers["content-length"]?.toIntOrNull() ?: -1
-        require(length in 1..8192 && headers["transfer-encoding"] == null) { "Corpo invÃ¡lido" }
+        require(length in 1..8192 && headers["transfer-encoding"] == null) { "Corpo inválido" }
         val bytes = ByteArray(length)
         java.io.DataInputStream(input).readFully(bytes)
         return JSONObject(String(bytes, StandardCharsets.UTF_8))
@@ -324,7 +324,7 @@ internal class DemoHttpServer(
             if (byte == 10) return out.toString("UTF-8").trimEnd('\r')
             out.write(byte)
         }
-        throw IllegalArgumentException("CabeÃ§alho muito longo")
+        throw IllegalArgumentException("Cabeçalho muito longo")
     }
 
     private fun respond(socket: Socket, code: Int, type: String, body: ByteArray, head: Boolean = false, extra: String = "") {
@@ -348,7 +348,7 @@ internal class DemoHttpServer(
             try { result.set(block()) } catch (error: Throwable) { failure.set(error) }
             finally { done.countDown() }
         }
-        require(done.await(3, TimeUnit.SECONDS)) { "Central indisponÃ­vel" }
+        require(done.await(3, TimeUnit.SECONDS)) { "Central indisponível" }
         failure.get()?.let { throw it }
         return result.get()
     }
@@ -421,7 +421,7 @@ internal class DemoHttpServer(
         when (action.optString("type")) {
             "mode" -> { if (action.optString("value") == "demo") require(action.optBoolean("acknowledgeRealDelivery")) { "Confirme que o demo pode enviar mensagens reais" }; store.liveMode = when (action.getString("value")) {
                 "esp" -> true; "demo" -> false
-                else -> throw IllegalArgumentException("Modo invÃ¡lido")
+                else -> throw IllegalArgumentException("Modo inválido")
             }; if (!store.liveMode) store.simulationRunning = true }
             "selectedDevice" -> {
                 val id = action.getString("value")
@@ -455,7 +455,7 @@ internal class DemoHttpServer(
                 val host = action.optString("smtpHost").trim(); val user = action.optString("smtpUser").trim()
                 val from = action.optString("smtpFrom").trim(); val bridge = action.optString("bridgeUrl").trim()
                 require(host.matches(Regex("[A-Za-z0-9.-]{0,253}")) && !user.contains('\n') &&
-                    (from.isEmpty() || DeliverySettings.validEmail(from))) { "SMTP invÃ¡lido" }
+                    (from.isEmpty() || DeliverySettings.validEmail(from))) { "SMTP inválido" }
                 settings.bridgeUrl = bridge
                 settings.smtpHost = host; settings.smtpUser = user; settings.smtpFrom = from
                 action.optString("smtpPassword").takeIf { it.isNotBlank() }?.let { settings.smtpPassword = it }
@@ -464,7 +464,7 @@ internal class DemoHttpServer(
             "resolveAlert" -> store.resolveAlert(action.getString("id"))
             "addContact" -> {
                 val name = action.getString("name").trim()
-                require(name.isNotEmpty() && name.length <= 60) { "Nome invÃ¡lido" }
+                require(name.isNotEmpty() && name.length <= 60) { "Nome inválido" }
                 store.addContact(name, action.optString("role").take(60))
             }
             "contactActive" -> {
@@ -488,7 +488,7 @@ internal class DemoHttpServer(
                         val channel = channel(value)
                         store.updateContact(old.copy(channels = if (channel in old.channels) old.channels - channel else old.channels + channel))
                     }
-                    else -> throw IllegalArgumentException("Filtro invÃ¡lido")
+                    else -> throw IllegalArgumentException("Filtro inválido")
                 }
             }
             "running" -> { require(!store.liveMode); store.simulationRunning = action.getBoolean("value") }
@@ -507,19 +507,19 @@ internal class DemoHttpServer(
                     "humidity" -> { require(value in 40f..90f); store.humidityLimit = value }
                     "nominalVoltage" -> { require(value in 100f..250f); store.nominalVoltage = value }
                     "tolerance" -> { require(value in 2f..20f); store.voltageTolerance = value }
-                    else -> throw IllegalArgumentException("Limite invÃ¡lido")
+                    else -> throw IllegalArgumentException("Limite inválido")
                 }
             }
-            else -> throw IllegalArgumentException("AÃ§Ã£o desconhecida")
+            else -> throw IllegalArgumentException("Ação desconhecida")
         }
     }
 
     private fun metric(value: String) = Metric.entries.firstOrNull { it.name.equals(value, true) }
-        ?: throw IllegalArgumentException("VariÃ¡vel invÃ¡lida")
+        ?: throw IllegalArgumentException("Variável inválida")
     private fun channel(value: String) = Channel.entries.firstOrNull { it.name.equals(value, true) }
-        ?: throw IllegalArgumentException("Canal invÃ¡lido")
+        ?: throw IllegalArgumentException("Canal inválido")
     private fun contact(id: String) = store.contacts.firstOrNull { it.id == id }
-        ?: throw IllegalArgumentException("Perfil nÃ£o encontrado")
+        ?: throw IllegalArgumentException("Perfil não encontrado")
     private fun deliveryStatus(event: AlertEvent, contact: DemoContact, channel: Channel): JSONObject? =
         DemoCentral.deliveryStatus(event.id, contact.id, channel)?.let { status -> JSONObject()
             .put("eventId", event.id).put("contactId", contact.id)
