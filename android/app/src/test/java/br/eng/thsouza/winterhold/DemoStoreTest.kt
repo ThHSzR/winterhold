@@ -5,6 +5,54 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DemoStoreTest {
+    @Test fun acknowledgingAndRestartingDoesNotRearmTheSameDemoViolation() {
+        val store = DemoStore().apply { liveMode = false }
+        val profile = store.demoEnvironments.getValue("demo_sala01")
+        store.setDemoReading(profile.deviceId, 30f, 50f, 220f).forEach { store.resolveAlert(it.id) }
+        val restored = DemoStore().apply { restoreJson(store.savedJson()); liveMode = false }
+        assertTrue(restored.setDemoReading(profile.deviceId, 31f, 50f, 220f).isEmpty())
+        assertEquals(1, restored.setDemoReading(profile.deviceId, 22f, 50f, 220f).size)
+        assertEquals(1, restored.setDemoReading(profile.deviceId, 30f, 50f, 220f).size)
+    }
+    @Test fun demoTransitionsAreIndependentDeduplicatedAndRecoverable() {
+        val store = DemoStore().apply { liveMode = false }
+        store.demoEnvironments.values.toList().forEach { profile ->
+            val id = profile.deviceId
+            val humidity = (profile.humidityMin + profile.humidityMax) / 2
+            val voltage = (profile.voltageMin + profile.voltageMax) / 2
+            val temperature = (profile.temperatureMin + profile.temperatureMax) / 2
+            store.setDemoReading(id, temperature, humidity, voltage)
+            val first = store.setDemoReading(id, profile.temperatureMax + 1, humidity, voltage)
+            assertEquals(1, first.size)
+            assertTrue(first.single().simulated)
+            assertEquals(id, first.single().deviceId)
+            assertTrue(store.setDemoReading(id, profile.temperatureMax + 2, humidity, voltage).isEmpty())
+            store.resolveAlert(first.single().id)
+            assertTrue(store.setDemoReading(id, profile.temperatureMax + 3, humidity, voltage).isEmpty())
+            val normal = store.setDemoReading(id, temperature, humidity, voltage)
+            assertEquals(1, normal.size)
+            assertTrue(normal.single().title.contains("normalizada"))
+            assertTrue(normal.single().simulated)
+            assertEquals(1, store.setDemoReading(id, profile.temperatureMin - 1, humidity, voltage).size)
+            assertEquals(1, store.setDemoReading(id, profile.temperatureMax + 1, humidity, voltage).size)
+        }
+        val restored = DemoStore().apply { restoreJson(store.savedJson()); liveMode = false }
+        restored.demoEnvironments.values.forEach { p ->
+            assertTrue(restored.setDemoReading(p.deviceId, p.temperatureMax + 2,
+                (p.humidityMin + p.humidityMax) / 2, (p.voltageMin + p.voltageMax) / 2).isEmpty())
+        }
+    }
+    @Test fun automaticReadingsEvaluateEachEnvironmentWithoutRepeating() {
+        val store = DemoStore().apply { liveMode = false; simulationRunning = true }
+        store.demoEnvironments.values.toList().forEach { p ->
+            store.saveDemoEnvironment(p.copy(temperatureMax = 21f, temperatureMin = 10f))
+        }
+        store.advance()
+        assertEquals(5, store.events.count { !it.resolved && it.metric == Metric.TEMPERATURE })
+        val count = store.events.size
+        store.advance()
+        assertEquals(count, store.events.size)
+    }
     @Test fun favoritesAndRecipientsPersistWhileDemoResetsOnRestart() {
         val original = DemoStore()
         original.saveEnvironment(EnvironmentProfile("lab-01", "Laboratório", favorite = true))

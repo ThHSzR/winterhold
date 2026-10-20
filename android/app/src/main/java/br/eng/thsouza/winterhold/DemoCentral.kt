@@ -41,11 +41,11 @@ object DemoCentral {
         private set
     var mqttSecret by mutableStateOf("")
         private set
-    val webSecret: String get() = webUsers?.users?.firstOrNull()?.key.orEmpty()
     internal var webUsers: WebAccessUsers? = null
         private set
     private var persistence: DemoPersistence? = null
     private var delivery: AlertDelivery? = null
+    fun deliveryDestination(eventId: String, contactId: String, channel: Channel): String? = delivery?.destination(eventId, contactId, channel)
     fun deliveryStatus(eventId: String, contactId: String, channel: Channel): String? =
         delivery?.status(eventId, contactId, channel)
     private var observer: ObserverHandle? = null
@@ -61,6 +61,7 @@ object DemoCentral {
 
     private val saveChanges = Runnable {
         Snapshot.sendApplyNotifications()
+        dispatchPending()
         save()
     }
     private val advance = object : Runnable {
@@ -87,6 +88,7 @@ object DemoCentral {
             preferences.edit().putString("secret", it).commit()
         }
         webUsers = WebAccessUsers(context.applicationContext)
+        EmbeddedBridge.prepare(context.applicationContext)
         // Persistence belongs to the app state, even when the user stops the web service.
         observer = Snapshot.registerGlobalWriteObserver {
             main.removeCallbacks(saveChanges)
@@ -106,10 +108,12 @@ object DemoCentral {
             }
         }
     }
+    fun dispatchPending() { delivery?.dispatch(store, store.events) }
     fun sendTest(event: AlertEvent) { delivery?.dispatchTest(store, event) }
 
     fun ensureStarted(context: Context) {
         prepare(context)
+        EmbeddedBridge.ensureStarted()
         if (server != null) {
             if (mqtt == null) startMqtt()
             return
@@ -139,6 +143,7 @@ object DemoCentral {
     }
 
     fun stop() {
+        EmbeddedBridge.stop()
         main.removeCallbacks(advance)
         save()
         server?.stop()
@@ -164,7 +169,7 @@ object DemoCentral {
                     .map { it.hostAddress.orEmpty() }
             }.distinct().sortedBy { !InetAddress.getByName(it).isSiteLocalAddress }
         } catch (_: Exception) { emptyList() }
-        urls = addresses.map { "http://$it:$PORT/" }
+        urls = addresses.map { "https://$it:8792/" }
         if (urls.isEmpty()) urls = listOf("http://127.0.0.1:$PORT/")
     }
 }
@@ -174,8 +179,9 @@ internal class DemoHttpServer(
     private val store: DemoStore
 ) {
     private val main = Handler(Looper.getMainLooper())
-    private val workers = Executors.newCachedThreadPool()
+    private val workers = java.util.concurrent.ThreadPoolExecutor(4, 8, 30, TimeUnit.SECONDS, java.util.concurrent.ArrayBlockingQueue(32))
     private lateinit var listener: ServerSocket
+    private var tlsListener: ServerSocket? = null
     private val assets = mapOf(
         "/" to ("index.html" to "text/html; charset=utf-8"),
         "/index.html" to ("index.html" to "text/html; charset=utf-8"),
@@ -190,21 +196,24 @@ internal class DemoHttpServer(
             reuseAddress = true
             bind(java.net.InetSocketAddress(InetAddress.getByName("0.0.0.0"), DemoCentral.PORT), 50)
         }
+        try {
+            tlsListener = WebTls.context().serverSocketFactory.createServerSocket(8792)
+            accept(tlsListener!!)
+            accept(listener)
+        } catch (error: Exception) { listener.close(); tlsListener?.close(); throw error }
+    }
+    private fun accept(server: ServerSocket) {
         Thread({
-            while (!listener.isClosed) {
+            while (!server.isClosed) {
                 try {
-                    val socket = listener.accept()
+                    val socket = server.accept()
                     workers.execute { socket.use { serve(it) } }
-                } catch (_: Exception) {
-                    if (listener.isClosed) return@Thread
-                }
+                } catch (_: Exception) { if (server.isClosed) return@Thread }
             }
         }, "winterhold-web").apply { isDaemon = true; start() }
     }
-
     fun stop() {
-        listener.close()
-        workers.shutdownNow()
+        listener.close(); tlsListener?.close(); workers.shutdownNow()
     }
 
     private fun serve(socket: Socket) {
@@ -227,19 +236,44 @@ internal class DemoHttpServer(
             if (route == "/healthz" && method == "GET") {
                 return respond(socket, 200, "application/json", """{"status":"ok","mode":"android-central","service":"winterhold-apk"}""".toByteArray())
             }
+            val secure = socket is javax.net.ssl.SSLSocket
+            val local = socket.inetAddress.isLoopbackAddress
+            val token = headers["cookie"].orEmpty().split(';').map { it.trim() }
+                .firstOrNull { it.startsWith("winterhold_session=") }?.substringAfter('=').orEmpty()
+            if (route.startsWith("/api/")) {
+                if (!secure && !local) return respond(socket, 403, "application/json", "{\"error\":\"Use HTTPS na porta 8792\"}".toByteArray())
+                if (method == "POST" && headers["x-winterhold-request"] != "1")
+                    return respond(socket, 403, "application/json", ByteArray(0))
+                val origin = headers["origin"]
+                if (origin != null && origin != "${if (secure) "https" else "http"}://${headers["host"]}")
+                    return respond(socket, 403, "application/json", ByteArray(0))
+                if (route == "/api/v1/login" && method == "POST") {
+                    val action = readBody(input, headers)
+                    val (code, session) = DemoCentral.webUsers!!.login(action.optString("username"), action.optString("password"), socket.inetAddress.hostAddress.orEmpty())
+                    return respond(socket, code, "application/json", (if (code == 200) "{\"status\":\"authenticated\"}" else
+                        "{\"error\":\"${if (code == 429) "Muitas tentativas; aguarde 60 segundos" else "Usuário ou senha inválidos"}\"}").toByteArray(),
+                        extra = if (session != null) "Set-Cookie: winterhold_session=$session; Path=/; HttpOnly; SameSite=Strict; Max-Age=28800${if (secure) "; Secure" else ""}\r\n" else "")
+                }
+                if (DemoCentral.webUsers?.acceptsSession(token) != true)
+                    return respond(socket, 401, "application/json", "{\"error\":\"Entre com usuário e senha\"}".toByteArray())
+                if (route == "/api/v1/logout" && method == "POST") {
+                    DemoCentral.webUsers?.logout(token)
+                    return respond(socket, 200, "application/json", "{}".toByteArray(), extra =
+                        "Set-Cookie: winterhold_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${if (secure) "; Secure" else ""}\r\n")
+                }
+            }
             if (route == "/api/v1/state" || route == "/api/v1/action" || route == "/api/v1/bridge") {
-                if (DemoCentral.webUsers?.accepts(headers["x-winterhold-key"].orEmpty()) != true)
-                    return respond(socket, 401, "application/json", """{"error":"Chave web inválida"}""".toByteArray())
                 try {
-                    if (route == "/api/v1/bridge" && method == "GET") {
+                    if (route == "/api/v1/bridge" && method in setOf("GET", "POST")) {
                         val settings = DeliverySettings(context)
                         require(settings.bridgeUrl.isNotBlank() && settings.bridgeToken.isNotBlank()) { "Configure a ponte" }
-                        val connection = java.net.URL("${settings.bridgeUrl}/status").openConnection() as java.net.HttpURLConnection
+                        val connection = java.net.URL("${settings.bridgeUrl}/${if (method == "POST") "relink" else "status"}").openConnection() as java.net.HttpURLConnection
                         try {
+                            connection.requestMethod = method
                             connection.connectTimeout = 3000; connection.readTimeout = 5000
                             connection.instanceFollowRedirects = false
                             connection.setRequestProperty("Authorization", "Bearer ${settings.bridgeToken}")
-                            require(connection.responseCode == 200) { "Ponte indisponível: HTTP ${connection.responseCode}" }
+                            require(connection.responseCode in setOf(200, 202)) { "Ponte indisponível: HTTP ${connection.responseCode}" }
                             val body = java.io.ByteArrayOutputStream()
                             connection.inputStream.use { stream ->
                                 val chunk = ByteArray(4096)
@@ -256,17 +290,8 @@ internal class DemoHttpServer(
                     val json = when {
                         route == "/api/v1/state" && method == "GET" -> onMain { snapshot() }
                         route == "/api/v1/action" && method == "POST" -> {
-                            val length = headers["content-length"]?.toIntOrNull() ?: -1
-                            require(length in 1..8192) { "Corpo inválido" }
-                            val bytes = ByteArray(length)
-                            var total = 0
-                            while (total < length) {
-                                val n = input.read(bytes, total, length - total)
-                                require(n > 0) { "Corpo incompleto" }
-                                total += n
-                            }
-                            val action = JSONObject(String(bytes, StandardCharsets.UTF_8))
-                            onMain { applyAction(action); DemoCentral.save(); snapshot() }
+                            val action = readBody(input, headers)
+                            onMain { applyAction(action); DemoCentral.dispatchPending(); DemoCentral.save(); snapshot() }
                         }
                         else -> return respond(socket, 405, "application/json", ByteArray(0))
                     }
@@ -280,11 +305,19 @@ internal class DemoHttpServer(
             val asset = assets[route] ?: return respond(socket, 404, "text/plain", ByteArray(0))
             val body = context.assets.open(asset.first).use { it.readBytes() }
             respond(socket, 200, asset.second, body, method == "HEAD")
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            android.util.Log.w("WinterholdHttp", "HTTP/TLS request failed: ${error.javaClass.simpleName}: ${error.message?.take(160)}")
             try { respond(socket, 500, "text/plain", ByteArray(0)) } catch (_: Exception) { }
         }
     }
 
+    private fun readBody(input: BufferedInputStream, headers: Map<String, String>): JSONObject {
+        val length = headers["content-length"]?.toIntOrNull() ?: -1
+        require(length in 1..8192 && headers["transfer-encoding"] == null) { "Corpo inválido" }
+        val bytes = ByteArray(length)
+        java.io.DataInputStream(input).readFully(bytes)
+        return JSONObject(String(bytes, StandardCharsets.UTF_8))
+    }
     private fun readLine(input: BufferedInputStream): String? {
         val out = java.io.ByteArrayOutputStream()
         while (out.size() < 8192) {
@@ -296,11 +329,11 @@ internal class DemoHttpServer(
         throw IllegalArgumentException("Cabeçalho muito longo")
     }
 
-    private fun respond(socket: Socket, code: Int, type: String, body: ByteArray, head: Boolean = false) {
-        val reason = when (code) { 200 -> "OK"; 400 -> "Bad Request"; 401 -> "Unauthorized";
+    private fun respond(socket: Socket, code: Int, type: String, body: ByteArray, head: Boolean = false, extra: String = "") {
+        val reason = when (code) { 200 -> "OK"; 400 -> "Bad Request"; 401 -> "Unauthorized"; 403 -> "Forbidden"; 429 -> "Too Many Requests";
             404 -> "Not Found"; 405 -> "Method Not Allowed"; else -> "Internal Server Error" }
         val header = "HTTP/1.1 $code $reason\r\nContent-Type: $type\r\nContent-Length: ${body.size}\r\n" +
-            "Connection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n" +
+            "${extra}Connection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n" +
             "Referrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'\r\n\r\n"
         socket.getOutputStream().apply {
             write(header.toByteArray(StandardCharsets.UTF_8))
@@ -375,6 +408,7 @@ internal class DemoHttpServer(
             .put("settings", DeliverySettings(context).let { settings -> JSONObject()
                 .put("smtpHost", settings.smtpHost).put("smtpUser", settings.smtpUser).put("smtpFrom", settings.smtpFrom)
                 .put("smtpConfigured", settings.smtpPassword.isNotEmpty())
+                .put("bridgeRuntime", EmbeddedBridge.status).put("tlsFingerprint", WebTls.fingerprint)
                 .put("bridgeUrl", settings.bridgeUrl).put("bridgeConfigured", settings.bridgeToken.isNotEmpty())
                 .put("mqttSecret", DemoCentral.mqttSecret).put("mqttStatus", DemoCentral.mqttStatus)
                 .put("webStatus", DemoCentral.status).put("webUrls", JSONArray(DemoCentral.urls))
@@ -387,7 +421,7 @@ internal class DemoHttpServer(
 
     private fun applyAction(action: JSONObject) {
         when (action.optString("type")) {
-            "mode" -> { store.liveMode = when (action.getString("value")) {
+            "mode" -> { if (action.optString("value") == "demo") require(action.optBoolean("acknowledgeRealDelivery")) { "Confirme que o demo pode enviar mensagens reais" }; store.liveMode = when (action.getString("value")) {
                 "esp" -> true; "demo" -> false
                 else -> throw IllegalArgumentException("Modo inválido")
             }; if (!store.liveMode) store.simulationRunning = true }
@@ -491,5 +525,6 @@ internal class DemoHttpServer(
     private fun deliveryStatus(event: AlertEvent, contact: DemoContact, channel: Channel): JSONObject? =
         DemoCentral.deliveryStatus(event.id, contact.id, channel)?.let { status -> JSONObject()
             .put("eventId", event.id).put("contactId", contact.id)
-            .put("channel", channel.name.lowercase(Locale.ROOT)).put("status", status) }
+            .put("channel", channel.name.lowercase(Locale.ROOT)).put("status", status)
+            .put("destination", DemoCentral.deliveryDestination(event.id, contact.id, channel).orEmpty()) }
 }

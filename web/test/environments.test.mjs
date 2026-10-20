@@ -10,10 +10,10 @@ test('web shows separate environment identity and bounds without injecting names
     .replace(/\nboot\(\);\s*$/, '');
   const elements = new Map();
   const context = vm.createContext({
-    ...demo, sessionStorage: { getItem: () => 'key' },
+    ...demo, sessionStorage: { getItem: () => 'key', removeItem() {} },
     document: {
       querySelector(selector) {
-        if (!elements.has(selector)) elements.set(selector, { innerHTML: '', hidden: true });
+        if (!elements.has(selector)) elements.set(selector, { innerHTML: '', hidden: true, addEventListener() {} });
         return elements.get(selector);
       },
       addEventListener() {}

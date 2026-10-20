@@ -1,0 +1,7 @@
+.tools/
+.work/
+backend/whatsapp/node_modules/
+android/app/src/main/jniLibs/
+android/app/src/main/assets/bridge/
+android/runtime-lock.json.tmp
+*.log

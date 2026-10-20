@@ -18,10 +18,43 @@ class CentralIntegrationTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
 
+    private var session = ""
+    private val testPassword = "Test-only-long-password-2026"
+    private var testUserId: String? = null
+    private var originalState: String? = null
+    private var originalSettings: List<String>? = null
+    @org.junit.Before fun authenticate() {
+        instrumentation.runOnMainSync {
+            DemoCentral.ensureStarted(context)
+            originalState = DemoCentral.store.savedJson()
+            val settings = DeliverySettings(context)
+            originalSettings = listOf(settings.smtpHost, settings.smtpUser, settings.smtpFrom, settings.bridgeUrl)
+            DemoCentral.store.contacts.clear() // MQTT fixtures must never notify real recipients.
+            DemoCentral.webUsers!!.users.firstOrNull { it.username == "instrumentation" }?.let { DemoCentral.webUsers!!.delete(it.id) }
+            testUserId = DemoCentral.webUsers!!.add("Instrumentation", "instrumentation", testPassword).id
+        }
+        val connection = URL("http://127.0.0.1:8790/api/v1/login").openConnection() as HttpURLConnection
+        connection.requestMethod = "POST"; connection.doOutput = true
+        connection.setRequestProperty("X-Winterhold-Request", "1")
+        connection.outputStream.use { it.write(JSONObject().put("username", "instrumentation").put("password", testPassword).toString().toByteArray()) }
+        assertEquals(200, connection.responseCode)
+        session = connection.getHeaderField("Set-Cookie").substringBefore(';')
+        connection.disconnect()
+    }
+    @org.junit.After fun cleanupAccount() {
+        instrumentation.runOnMainSync {
+            testUserId?.let { DemoCentral.webUsers?.delete(it) }
+            originalState?.let { DemoCentral.store.restoreJson(it); DemoCentral.save() }
+            originalSettings?.let { values -> DeliverySettings(context).apply {
+                smtpHost = values[0]; smtpUser = values[1]; smtpFrom = values[2]; bridgeUrl = values[3]
+            } }
+        }
+    }
     private fun request(path: String, action: String? = null): Pair<Int, String> {
         val connection = URL("http://127.0.0.1:8790$path").openConnection() as HttpURLConnection
         try {
-            connection.setRequestProperty("X-Winterhold-Key", DemoCentral.webSecret)
+            connection.setRequestProperty("Cookie", session)
+            connection.setRequestProperty("X-Winterhold-Request", "1")
             connection.connectTimeout = 2_000
             connection.readTimeout = 4_000
             if (action != null) {
@@ -74,7 +107,7 @@ class CentralIntegrationTest {
         }
     }
 
-    @Test fun servesDirectIpWithKeyPersistsAndSurvivesClosingActivity() {
+    @Test fun servesWithPasswordSessionPersistsAndSurvivesClosingActivity() {
         // Match the one-time preparation offered by the app, without changing other apps.
         instrumentation.uiAutomation.executeShellCommand(
             "dumpsys deviceidle whitelist +${context.packageName}"
@@ -111,8 +144,9 @@ class CentralIntegrationTest {
         assertEquals(31.5, liveState.getJSONArray("samples").getJSONObject(0).getDouble("temperature"), 0.01)
         assertTrue(liveState.getJSONArray("events").getJSONObject(0).getString("title").contains("Temperatura"))
         assertEquals("ci-esp", liveState.getJSONArray("events").getJSONObject(0).getString("deviceId"))
-        val demo = JSONObject(request("/api/v1/action", """{"type":"mode","value":"demo"}""").second)
+        val demo = JSONObject(request("/api/v1/action", """{"type":"mode","value":"demo","acknowledgeRealDelivery":true}""").second)
         assertEquals(5, demo.getJSONArray("devices").length())
+        assertEquals(200, request("/api/v1/action", """{"type":"running","value":false}""").first)
         val reading = """{"type":"setDemoReading","id":"demo_servidores","temperature":30,"humidity":40,"voltage":220}"""
         assertEquals(200, request("/api/v1/action", reading).first)
         val serverRoom = JSONObject(request("/api/v1/action", """{"type":"selectedDevice","value":"demo_servidores"}""").second)

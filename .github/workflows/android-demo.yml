@@ -1,6 +1,7 @@
 name: Android demo
 
 on:
+  pull_request:
   push:
     branches: [APK, main]
   workflow_dispatch:
@@ -23,15 +24,27 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare private Node and Baileys runtime
+        run: |
+          python -m pip install lief==0.17.6
+          cd backend/whatsapp
+          npm ci --omit=optional --ignore-scripts
+          cd ../..
+          python android/prepare-runtime.py
       - name: Build debug APK
         working-directory: android
         run: |
           chmod +x ./gradlew
-          ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon
+          ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
       - uses: actions/upload-artifact@v4
         with:
           name: winterhold-demo-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
   local-central:
     runs-on: ubuntu-latest
@@ -87,7 +100,7 @@ jobs:
           path: dist
       - name: Update direct APK download
         run: |
-          mv dist/app-debug.apk dist/winterhold-demo-debug.apk
+          mv dist/debug/app-debug.apk dist/winterhold-demo-debug.apk
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add dist/winterhold-demo-debug.apk

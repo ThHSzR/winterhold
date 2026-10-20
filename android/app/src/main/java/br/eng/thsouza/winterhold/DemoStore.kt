@@ -216,15 +216,13 @@ class DemoStore {
         readings.add(0, reading)
         readings.indices.filter { readings[it].deviceId == id }.drop(60).asReversed().forEach { readings.removeAt(it) }
         now = reading.time
-        return Metric.entries.mapNotNull { metric ->
-            val value = reading.value(metric)!!
+        val before = events.map { it.id }.toSet()
+        Metric.entries.forEach { metric ->
+            val value = reading.value(metric)
             val (low, high) = demoEnvironments.getValue(id).bounds(metric)
-            if (value in low..high) null else AlertEvent(time = now, metric = metric,
-                title = "${metric.label} ${if (value < low) "abaixo do mínimo" else "acima do máximo"}",
-                detail = "$id · $value ${metric.unit} · faixa $low–$high ${metric.unit}",
-                severity = if (metric == Metric.VOLTAGE) Severity.CRITICAL else Severity.WARNING,
-                simulated = true, deviceId = id).also { events.add(0, it) }
+            checkLimit(id, metric, value, low, high, true)
         }
+        return events.filter { it.id !in before }
     }
 
     fun saveEnvironment(profile: EnvironmentProfile) {
@@ -265,27 +263,27 @@ class DemoStore {
         }
     }
 
-    private fun checkLimit(id: String, metric: Metric, value: Float?, low: Float, high: Float) {
+    private fun checkLimit(id: String, metric: Metric, value: Float?, low: Float, high: Float, simulated: Boolean = false) {
         if (value == null) return
-        val key = "$id:${metric.name}"
+        val key = "$simulated:$id:${metric.name}"
         val violation = when { value < low -> "min"; value > high -> "max"; else -> null }
         val previous = activeViolations.firstOrNull { it.startsWith("$key:") }
         if (previous != null && previous != "$key:$violation") {
             activeViolations.remove(previous)
-            events.indexOfFirst { !it.simulated && !it.resolved && it.metric == metric && it.detail.startsWith("$id ·") }
+            events.indexOfFirst { it.simulated == simulated && !it.resolved && it.metric == metric && it.deviceId == id }
                 .takeIf { it >= 0 }?.let { events[it] = events[it].copy(resolved = true) }
-            if (violation == null) addEvent(id, metric, "${metric.label} normalizada", "$id · $value ${metric.unit} · faixa $low–$high ${metric.unit}", Severity.INFO, true)
+            if (violation == null) addEvent(id, metric, "${metric.label} normalizada", "$id · $value ${metric.unit} · faixa $low–$high ${metric.unit}", Severity.INFO, true, simulated)
         }
         if (violation != null && activeViolations.add("$key:$violation"))
             addEvent(id, metric, "${metric.label} ${if (violation == "min") "abaixo do mínimo" else "acima do máximo"}",
                 "$id · $value ${metric.unit} · faixa $low–$high ${metric.unit}",
-                if (metric == Metric.VOLTAGE) Severity.CRITICAL else Severity.WARNING)
+                if (metric == Metric.VOLTAGE) Severity.CRITICAL else Severity.WARNING, simulated = simulated)
     }
 
     private fun addEvent(deviceId: String, metric: Metric?, title: String, detail: String, severity: Severity,
-                         resolved: Boolean = false) {
+                         resolved: Boolean = false, simulated: Boolean = false) {
         events.add(0, AlertEvent(time = now, deviceId = deviceId, metric = metric, title = title, detail = detail,
-            severity = severity, resolved = resolved, simulated = false))
+            severity = severity, resolved = resolved, simulated = simulated))
         if (events.size > 500) events.removeAt(events.lastIndex)
     }
 
@@ -299,6 +297,12 @@ class DemoStore {
                 (previous?.humidity ?: 55f) + .15f * sin(tick / 7.0).toFloat(),
                 (previous?.voltage ?: 220f) + .1f * sin(tick / 3.0).toFloat(), profile.deviceId))
             readings.indices.filter { readings[it].deviceId == profile.deviceId }.drop(60).asReversed().forEach { readings.removeAt(it) }
+            val latest = readings.first { it.deviceId == profile.deviceId }
+            now = latest.time
+            Metric.entries.forEach { metric ->
+                val (low, high) = profile.bounds(metric)
+                checkLimit(profile.deviceId, metric, latest.value(metric), low, high, true)
+            }
         }
     }
 
@@ -353,6 +357,7 @@ class DemoStore {
 
     internal fun savedJson(): String = JSONObject()
         .put("version", 5).put("tick", tick)
+        .put("activeViolations", JSONArray(activeViolations.sorted()))
         .put("readings", JSONArray(readings.map { JSONObject()
             .put("time", it.time).put("temperature", it.temperature)
             .put("humidity", it.humidity).put("voltage", it.voltage).put("deviceId", it.deviceId) }))
@@ -452,6 +457,15 @@ class DemoStore {
             else demoPresets
         val savedDemoId = root.optString("selectedDemoId", "demo_sala01").takeIf { it in demoPresets.map { preset -> preset.deviceId } }
             ?: "demo_sala01"
+        val savedViolations = if (root.has("activeViolations")) root.getJSONArray("activeViolations").strings().also { entries ->
+            require(entries.size <= 111)
+            entries.forEach { value ->
+                val parts = value.split(':')
+                require(parts.size == 4 && parts[0] in setOf("true", "false") &&
+                    parts[2] in Metric.entries.map { it.name } && parts[3] in setOf("min", "max"))
+                require((if (parts[0] == "true") savedDemoProfiles else savedProfiles).any { it.deviceId == parts[1] })
+            }
+        } else null
         require(savedProfiles.size <= 32 && savedProfiles.map { it.deviceId }.distinct().size == savedProfiles.size)
         require(savedSeen.keys.all { id -> savedProfiles.any { it.deviceId == id } })
         require(selected == null || savedProfiles.any { it.deviceId == selected })
@@ -465,14 +479,15 @@ class DemoStore {
         liveMode = true
         selectedDeviceId = selected
         activeViolations.clear(); disconnected.clear()
-        savedEvents.filter { !it.simulated && !it.resolved && it.metric != null }.forEach { event ->
-            event.detail.substringBefore(" ·").takeIf { it in savedSeen }?.let { id ->
-                val bound = environments[id]?.bounds(event.metric!!)
-                val reading = savedLive.firstOrNull { it.deviceId == id }?.value(event.metric!!)
+        savedEvents.filter { !it.resolved && it.metric != null && !it.title.startsWith("Teste de") }.forEach { event ->
+            event.deviceId?.takeIf { if (event.simulated) it in demoEnvironments else it in savedSeen }?.let { id ->
+                val bound = (if (event.simulated) demoEnvironments[id] else environments[id])?.bounds(event.metric!!)
+                val reading = (if (event.simulated) savedReadings else savedLive).firstOrNull { it.deviceId == id }?.value(event.metric!!)
                 val side = if (reading != null && bound != null && reading < bound.first) "min" else "max"
-                activeViolations.add("$id:${event.metric!!.name}:$side")
+                activeViolations.add("${event.simulated}:$id:${event.metric!!.name}:$side")
             }
         }
+        if (savedViolations != null) { activeViolations.clear(); activeViolations.addAll(savedViolations) }
         events.clear(); events.addAll(savedEvents)
         contacts.clear(); contacts.addAll(savedContacts)
         enabledChannels.clear(); enabledChannels.addAll(channels.distinct())
