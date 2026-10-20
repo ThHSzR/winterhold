@@ -107,6 +107,7 @@ internal class WebAccessUsers(context: Context) {
         if (sessions.size >= 128) sessions.remove(sessions.keys.first())
         val token = random()
         sessions[token] = Session(user.id, now + 8 * 60 * 60_000)
+        attempts.remove(peer)
         return 200 to token
     }
     @Synchronized fun acceptsSession(token: String): Boolean {
