@@ -77,8 +77,12 @@ internal object EmbeddedBridge {
                 val child = process!!
                 Thread({
                     // Drain output without persisting QR, WhatsApp identifiers or message bodies.
-                    child.inputStream.bufferedReader().use { input -> while (input.readLine() != null) { } }
-                    val code = child.waitFor()
+                    // Destroying the process can interrupt a blocked read on Android 11.
+                    // Never let that expected pipe interruption crash the app process.
+                    runCatching {
+                        child.inputStream.bufferedReader().use { input -> while (input.readLine() != null) { } }
+                    }.onFailure { child.destroy() }
+                    val code = runCatching { child.waitFor() }.getOrDefault(-1)
                     synchronized(this) {
                         if (process === child) { process = null; status = "WhatsApp interrompido ($code); retomada automática" }
                     }
