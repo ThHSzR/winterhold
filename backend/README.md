@@ -4,7 +4,7 @@ Firmware PlatformIO para ler um DHT22 e um modulo ZMPT101B e publicar as amostra
 
 ## Configuracao
 
-Edite `include/config.h` com o SSID e a senha do Wi-Fi, o IP e a porta do broker MQTT no tablet e o identificador unico deste dispositivo. Se o broker exigir autenticacao, preencha `MQTT_USER` e `MQTT_PASSWORD`. Cada ESP32 pode usar o mesmo firmware e broker, desde que tenha um `DEVICE_ID` diferente. O topico e gerado como `winterhold/<device_id>/leituras`; o tablet pode assinar `winterhold/+/leituras` para receber todos os pontos.
+Edite `include/config.h` com o SSID e a senha do Wi-Fi, o **IP do celular Android** em `MQTT_HOST`, a porta `1883`, a chave copiada em **Ajustes → ESP32 / MQTT** no campo `MQTT_PASSWORD` e o identificador unico deste dispositivo. Mantenha `MQTT_USER` como `winterhold`. Cada ESP32 pode usar a mesma central, desde que tenha um `DEVICE_ID` diferente. O topico e gerado como `winterhold/<device_id>/leituras`; o APK recebe as publicacoes diretamente como endpoint MQTT 3.1.1 QoS 0. Nao inclua senhas ou chaves reais em commits.
 
 Pinos padrao: DHT22 no GPIO 4 e saida analogica do ZMPT101B no GPIO 34. Confirme a pinagem da sua placa antes de ligar os sensores. O firmware publica a cada 1 segundo. O DHT22 e lido a cada 2 segundos, limite recomendado pelo sensor; por isso, a leitura de temperatura e umidade se repete em publicacoes alternadas.
 
@@ -24,6 +24,6 @@ pio device monitor -d backend
 
 O JSON publicado usa `device_id`, `timestamp` UTC, `temperatura_c`, `umidade_pct` e `tensao_rms_v`. Leituras invalidas aparecem como `null`; sem sincronizacao de horario, `timestamp` tambem e `null`.
 
-Para receber as mensagens, o tablet precisa executar ou acessar um broker MQTT local e assinar o topico configurado. Este firmware ainda nao tem fila local: leituras feitas enquanto Wi-Fi ou MQTT estiver desconectado nao sao reenviadas.
+O APK e a central e escuta MQTT diretamente na porta 1883, sem broker externo ou Termux. Ative **Mostrar leituras reais** para ver o ESP32 no APK e na web `http://IP_DO_CELULAR:8790/`. A central usa o horario de recebimento quando o firmware nao sincronizou `timestamp`; valores nulos nao geram alerta para aquela medida. Este firmware ainda nao tem fila local: leituras feitas enquanto Wi-Fi ou MQTT estiver desconectado nao sao reenviadas.
 
 Antes de ligar o modulo a rede eletrica, valide isolamento, alimentacao, protecao e faixa do sinal no ADC do ESP32. O GPIO nao pode receber tensao acima do limite da placa.

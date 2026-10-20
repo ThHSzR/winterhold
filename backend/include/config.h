@@ -5,8 +5,8 @@ constexpr char WIFI_PASSWORD[] = "SENHA_DA_REDE";
 
 constexpr char MQTT_HOST[] = "192.168.1.100";
 constexpr uint16_t MQTT_PORT = 1883;
-constexpr char MQTT_USER[] = "";
-constexpr char MQTT_PASSWORD[] = "";
+constexpr char MQTT_USER[] = "winterhold";
+constexpr char MQTT_PASSWORD[] = "COPIE_A_CHAVE_DO_APLICATIVO";
 
 constexpr char DEVICE_ID[] = "sala-01";
 constexpr char MQTT_TOPIC_PREFIX[] = "winterhold";
