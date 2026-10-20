@@ -18,7 +18,8 @@ adb('push',str(xml),'/data/local/tmp/ci-web-access.xml')
 adb('shell','run-as',package,'mkdir','-p','shared_prefs')
 adb('shell','run-as',package,'cp','/data/local/tmp/ci-web-access.xml','shared_prefs/web_access.xml')
 adb('shell','dumpsys','deviceidle','whitelist','+'+package)
-if int(adb('shell','getprop','ro.build.version.sdk'))>=33:adb('shell','pm','grant',package,'android.permission.POST_NOTIFICATIONS')
+api_level=int(adb('shell','getprop','ro.build.version.sdk'))
+if api_level>=33:adb('shell','pm','grant',package,'android.permission.POST_NOTIFICATIONS')
 adb('shell','am','start','-W','-n',package+'/.MainActivity')
 adb('forward','tcp:18790','tcp:8790')
 cookie=''
@@ -54,7 +55,10 @@ print('START_STICKY and persisted settings passed',flush=True)
 # Reboot only after the real activity launch is durable; otherwise an immediate
 # emulator reboot can restore the old force-stopped flag and skip BOOT_COMPLETED.
 def launch_state_persisted():
-    restriction=ET.fromstring(adb('shell','cat','/data/system/users/0/package-restrictions.xml'))
+    file='/data/system/users/0/package-restrictions.xml'
+    # Android 12+ stores this system file as ABX, not UTF-8 XML.
+    text=adb('shell','abx2xml',file,'-') if api_level>=31 else adb('shell','cat',file)
+    restriction=ET.fromstring(text)
     entry=next((item for item in restriction.findall('pkg') if item.get('name')==package),None)
     return entry is not None and entry.get('stopped')!='true' and entry.get('nl')!='true'
 wait_for(launch_state_persisted,60)
