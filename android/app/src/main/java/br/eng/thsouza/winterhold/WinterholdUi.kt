@@ -469,7 +469,7 @@ private fun EventCard(event: AlertEvent, store: DemoStore, compact: Boolean = fa
                         else "Tentativas por destinatário e canal:", color = Muted)
                     if (routes.isEmpty()) Text("Nenhum perfil ativo combina com este evento.")
                     routes.forEach { (contact, channels) ->
-                        Text("${contact.name}: ${channels.joinToString { "${it.label} (${DemoCentral.deliveryStatus(event.id, contact.id, it) ?: "aguardando configuração"})" }}")
+                        Text("${contact.name}: ${channels.joinToString { "${it.label} · ${DemoCentral.deliveryDestination(event.id, contact.id, it).orEmpty()} (${DemoCentral.deliveryStatus(event.id, contact.id, it) ?: "aguardando configuração"})" }}")
                     }
                 }
             },

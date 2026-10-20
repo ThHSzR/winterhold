@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -23,6 +24,23 @@ internal fun BridgePairingPanel() {
     val app = LocalContext.current.applicationContext
     var state by remember { mutableStateOf("Consultando WhatsApp…") }
     var qr by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var relink by remember { mutableStateOf(false) }
+    var confirmRelink by remember { mutableStateOf(false) }
+    LaunchedEffect(relink) {
+        if (relink) {
+            withContext(Dispatchers.IO) { runCatching {
+                val settings = DeliverySettings(app)
+                val connection = URL("${settings.bridgeUrl}/relink").openConnection() as HttpURLConnection
+                try {
+                    connection.connectTimeout = 2000; connection.readTimeout = 3000
+                    connection.requestMethod = "POST"; connection.instanceFollowRedirects = false
+                    connection.setRequestProperty("Authorization", "Bearer ${settings.bridgeToken}")
+                    require(connection.responseCode == 202)
+                } finally { connection.disconnect() }
+            } }
+            relink = false
+        }
+    }
     LaunchedEffect(Unit) {
         while (true) {
             val result = withContext(Dispatchers.IO) {
@@ -57,5 +75,10 @@ internal fun BridgePairingPanel() {
         Text(state)
         qr?.let { Image(it.asImageBitmap(), "QR para vincular WhatsApp", Modifier.size(240.dp)) }
         Text("No WhatsApp do telefone da conta, abra Aparelhos conectados e escaneie o QR. O pareamento também aparece na web.")
+        TextButton(onClick = { confirmRelink = true }) { Text("Novo pareamento") }
     }
+    if (confirmRelink) androidx.compose.material3.AlertDialog(onDismissRequest = { confirmRelink = false },
+        title = { Text("Novo pareamento?") }, text = { Text("A sessão atual será desconectada neste APK. Escaneie o novo QR para voltar a enviar WhatsApp.") },
+        confirmButton = { TextButton(onClick = { relink = true; confirmRelink = false }) { Text("Gerar novo QR") } },
+        dismissButton = { TextButton(onClick = { confirmRelink = false }) { Text("Cancelar") } })
 }

@@ -57,6 +57,16 @@ function retry() {
 connect().catch(retry);
 http.createServer(async (req, res) => {
   if (!authenticated(req)) return reply(res, 401, { error: 'Não autorizado' });
+  if (req.method === 'POST' && req.url === '/relink') {
+    clearTimeout(reconnectTimer);
+    socket?.ev.removeAllListeners('connection.update');
+    socket?.end(undefined);
+    const auth = path.join(dataDir, 'auth');
+    if (fs.existsSync(auth)) fs.renameSync(auth, path.join(dataDir, `previous-auth-${Date.now()}`));
+    qr = null; connection = 'starting'; attempts = 0;
+    connect().catch(retry);
+    return reply(res, 202, { status: 'pairing_requested' });
+  }
   if (req.method === 'GET' && req.url === '/status') {
     return reply(res, 200, { connection, qr: qr ? await QRCode.toDataURL(qr, { margin: 2 }) : null });
   }

@@ -264,15 +264,16 @@ internal class DemoHttpServer(
             }
             if (route == "/api/v1/state" || route == "/api/v1/action" || route == "/api/v1/bridge") {
                 try {
-                    if (route == "/api/v1/bridge" && method == "GET") {
+                    if (route == "/api/v1/bridge" && method in setOf("GET", "POST")) {
                         val settings = DeliverySettings(context)
                         require(settings.bridgeUrl.isNotBlank() && settings.bridgeToken.isNotBlank()) { "Configure a ponte" }
-                        val connection = java.net.URL("${settings.bridgeUrl}/status").openConnection() as java.net.HttpURLConnection
+                        val connection = java.net.URL("${settings.bridgeUrl}/${if (method == "POST") "relink" else "status"}").openConnection() as java.net.HttpURLConnection
                         try {
+                            connection.requestMethod = method
                             connection.connectTimeout = 3000; connection.readTimeout = 5000
                             connection.instanceFollowRedirects = false
                             connection.setRequestProperty("Authorization", "Bearer ${settings.bridgeToken}")
-                            require(connection.responseCode == 200) { "Ponte indisponível: HTTP ${connection.responseCode}" }
+                            require(connection.responseCode in setOf(200, 202)) { "Ponte indisponível: HTTP ${connection.responseCode}" }
                             val body = java.io.ByteArrayOutputStream()
                             connection.inputStream.use { stream ->
                                 val chunk = ByteArray(4096)

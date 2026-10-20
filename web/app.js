@@ -349,7 +349,7 @@ function renderDialog() {
     if (!item) { closeDialog(); return; }
     const routes = routeAlert(state, item);
     const rows = routes.map(route =>
-      `<div class="route-row"><strong>${escapeHtml(route.contact.name)}</strong><small>${route.channels.map(c => `${CHANNELS[c]}: ${escapeHtml(state.deliveries?.find(d => d.eventId === item.id && d.contactId === route.contact.id && d.channel === c)?.status || 'aguardando configuração')}`).join(' · ')}</small></div>`).join('');
+      `<div class="route-row"><strong>${escapeHtml(route.contact.name)}</strong><small>${route.channels.map(c => `${CHANNELS[c]} · ${escapeHtml(state.deliveries?.find(d => d.eventId === item.id && d.contactId === route.contact.id && d.channel === c)?.destination || 'sem destino')}: ${escapeHtml(state.deliveries?.find(d => d.eventId === item.id && d.contactId === route.contact.id && d.channel === c)?.status || 'aguardando configuração')}`).join(' · ')}</small></div>`).join('');
     dialogFrame('Entregas', `<p>${escapeHtml(item.title)}.</p>${rows || '<div class="empty">Nenhum perfil ativo combina com este evento.</div>'}`,
       '<button class="btn" data-action="close-dialog">Fechar</button>');
   } else if (dialog.type === 'add-contact') {
@@ -394,6 +394,13 @@ document.addEventListener('click', async e => {
   const action = target.dataset.action;
   if (action === 'mode' && target.checked && !window.confirm('O demo pode enviar SMS, e-mail e WhatsApp reais aos destinatários cadastrados. Ativar e permitir alertas simulados?')) { target.checked = false; return; }
   if (action === 'dismiss' && e.target === target) { closeDialog(); return; }
+  if (action === 'bridge-relink') {
+    if (!window.confirm('Desconectar a sessão deste APK e gerar um novo QR?')) return;
+    const response = await fetch('/api/v1/bridge', { method: 'POST', credentials: 'same-origin', headers: { 'X-Winterhold-Request': '1' } });
+    connectionBanner.hidden = false;
+    connectionBanner.textContent = response.ok ? 'Novo pareamento solicitado. Consulte o estado/QR.' : 'Não foi possível solicitar novo pareamento.';
+    return;
+  }
   if (action === 'bridge-status') {
     const status = document.querySelector('#bridge-status');
     if (backend !== 'android') { status.textContent = 'Conexão disponível apenas com o APK.'; return; }
