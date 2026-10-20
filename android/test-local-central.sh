@@ -20,7 +20,9 @@ for attempt in $(seq 1 30); do
   sleep 1
 done
 web_key=$(adb shell run-as br.eng.thsouza.winterhold cat shared_prefs/web_access.xml | \
-  python3 -c 'import sys,xml.etree.ElementTree as ET; print(ET.fromstring(sys.stdin.read()).find("./string[@name=\"secret\"]").text)')
+  python3 -c 'import sys,json,xml.etree.ElementTree as ET; root=ET.fromstring(sys.stdin.read()); print(json.loads(root.find("./string[@name=\"users\"]").text)[0]["key"])')
+curl --max-time 5 --fail --silent -H "X-Winterhold-Key: $web_key" -H 'Content-Type: application/json' \
+  --data '{"type":"mode","value":"demo"}' http://127.0.0.1:18790/api/v1/action
 curl --max-time 5 --fail --silent -H "X-Winterhold-Key: $web_key" -H 'Content-Type: application/json' \
   --data '{"type":"running","value":false}' http://127.0.0.1:18790/api/v1/action
 curl --max-time 5 --fail --silent -H "X-Winterhold-Key: $web_key" -H 'Content-Type: application/json' \
