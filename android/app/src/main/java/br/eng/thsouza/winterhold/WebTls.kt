@@ -16,16 +16,16 @@ import javax.net.ssl.X509ExtendedKeyManager
 import javax.security.auth.x500.X500Principal
 
 internal object WebTls {
-    private const val ALIAS = "winterhold-web-tls-v1"
+    private const val ALIAS = "winterhold-web-tls-v2-ec"
     var fingerprint = ""
         private set
     fun context(): SSLContext {
         val keys = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        if (!keys.containsAlias(ALIAS)) KeyPairGenerator.getInstance("RSA", "AndroidKeyStore").apply {
-            initialize(KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_DECRYPT)
-                .setKeySize(2048).setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA512)
-                .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1, KeyProperties.SIGNATURE_PADDING_RSA_PSS)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_RSA_PKCS1)
+        if (!keys.containsAlias(ALIAS)) KeyPairGenerator.getInstance("EC", "AndroidKeyStore").apply {
+            initialize(KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_SIGN)
+                .setAlgorithmParameterSpec(java.security.spec.ECGenParameterSpec("secp256r1"))
+                // Conscrypt signs the already-hashed TLS transcript through NONEwithECDSA.
+                .setDigests(KeyProperties.DIGEST_NONE, KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA384, KeyProperties.DIGEST_SHA512)
                 .setCertificateSubject(X500Principal("CN=Winterhold local"))
                 .setCertificateSerialNumber(BigInteger.ONE).setCertificateNotBefore(Date(0))
                 .setCertificateNotAfter(Date(4_102_444_800_000L)).build())
@@ -35,10 +35,10 @@ internal object WebTls {
         val manager = object : X509ExtendedKeyManager() {
             override fun getPrivateKey(alias: String?) = keys.getKey(ALIAS, null) as PrivateKey
             override fun getCertificateChain(alias: String?) = chain
-            override fun getServerAliases(type: String?, issuers: Array<out Principal>?) = arrayOf(ALIAS)
-            override fun chooseServerAlias(type: String?, issuers: Array<out Principal>?, socket: Socket?) = if (type == "RSA") ALIAS else null
+            override fun getServerAliases(type: String?, issuers: Array<out Principal>?) = if (type == "EC") arrayOf(ALIAS) else null
+            override fun chooseServerAlias(type: String?, issuers: Array<out Principal>?, socket: Socket?) = if (type == "EC") ALIAS else null
             override fun chooseEngineServerAlias(type: String?, issuers: Array<out Principal>?, engine: javax.net.ssl.SSLEngine?) =
-                if (type == "RSA") ALIAS else null
+                if (type == "EC") ALIAS else null
             override fun getClientAliases(type: String?, issuers: Array<out Principal>?) = null
             override fun chooseClientAlias(types: Array<out String>?, issuers: Array<out Principal>?, socket: Socket?) = null
         }
