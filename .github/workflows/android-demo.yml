@@ -100,7 +100,7 @@ jobs:
           path: dist
       - name: Update direct APK download
         run: |
-          mv dist/app-debug.apk dist/winterhold-demo-debug.apk
+          mv dist/debug/app-debug.apk dist/winterhold-demo-debug.apk
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add dist/winterhold-demo-debug.apk
