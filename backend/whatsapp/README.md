@@ -1,26 +1,83 @@
-# Baileys no APK e ponte alternativa
+# WhatsApp — Baileys integrado e ponte externa opcional
 
-O APK ARM64 inclui Node 24 e os módulos fixados no lockfile. O aplicativo prepara e supervisiona a ponte local sem Termux/PM2. Pareamento QR e estado ficam no APK e na web autenticada. Consulte [implementação e validação](../../docs/ISSUE_2.md).
+O APK ARM64 da versão `0.7-integrated-central` inclui Node 24.18.0 e Baileys 6.7.24. O aplicativo prepara os módulos privados, inicia e supervisiona o processo e mostra o QR no APK e na web autenticada. **Termux, PM2 e um servidor separado não são requisitos para esse APK.**
 
-As instruções abaixo são para hospedar opcionalmente a ponte fora do APK. Use `npm ci --omit=optional --ignore-scripts`, Node 22+ e preserve o diretório privado de sessão.
+O runtime foi verificado no Galaxy A30 até a geração do QR. O proprietário adiou o pareamento; envio a um destinatário real e recuperação de uma sessão já pareada continuam pendentes. Veja o [registro de validação](../../docs/ISSUE_2.md).
 
-# Ponte WhatsApp Node/Baileys
+## Uso integrado no Android
 
-Processo auxiliar **opcional** para WhatsApp. O Android continua recebendo MQTT, avaliando alertas e servindo a única interface web remota. A ponte recebe apenas mensagens de saída do APK; não consulta sensores nem outros serviços do homelab. Baileys é uma integração não oficial do WhatsApp Web, que pode quebrar com alterações do protocolo ou restrições da conta. O projeto não depende de token Meta ou Termux.
+1. Instale o APK ARM64 completo e abra a central.
+2. Em Ajustes → WhatsApp, confira o estado do runtime e da conexão.
+3. No telefone da conta remetente, abra a área de aparelhos conectados e leia o QR mostrado pelo APK ou pela web.
+4. Aguarde `connected`.
+5. Configure destinos e filtros em Equipe e habilite o canal WhatsApp.
+6. Faça um teste explícito e confira o recebimento no destino.
 
-## Executar
+A URL inicial é `http://127.0.0.1:8791`, com token aleatório guardado pelo APK. Não é necessário informar manualmente um token Meta. O processo escuta apenas no loopback do aparelho. A web consulta conexão/QR pelo proxy autenticado da central, sem receber o token da ponte.
 
-Requer Node.js 20+, acesso à internet para pareamento/WhatsApp e armazenamento privado persistente. Na pasta `backend/whatsapp`:
+Módulos ficam em `files/bridge-runtime`; autenticação e reservas ficam em `files/whatsapp-session`. Atualizar módulos não remove esse diretório de sessão. **Novo pareamento** encerra a conexão e arquiva a autenticação anterior antes de solicitar outro QR. Limpar dados ou desinstalar remove o armazenamento privado.
+
+Em uma ABI sem runtime preparado, use a alternativa externa com um APK compatível. O artefato ARM64 não possui garantia de instalação em outras arquiteturas.
+
+## Hospedagem externa opcional
+
+O servidor deste diretório também pode executar em outro host. A central Android continua recebendo MQTT, avaliando limites e servindo o painel; a ponte externa recebe apenas mensagens de saída.
+
+Use Node 22+ para acompanhar o ambiente de preparação utilizado pelo projeto. Instale as dependências fixadas no lockfile:
 
 ```sh
-npm install
-export WINTERHOLD_BRIDGE_TOKEN="$(openssl rand -hex 32)"
-export WINTERHOLD_BRIDGE_DATA=/caminho/privado/winterhold-whatsapp
-npm start
+npm ci --omit=optional --ignore-scripts
 ```
 
-Por padrão escuta apenas `127.0.0.1:8791`, útil quando Node roda **no mesmo aparelho** que a central, situação ainda não validada em Android. Para outro host, publique a ponte **somente por HTTPS** em rede privada com proxy reverso; configure `WINTERHOLD_BRIDGE_HOST` conforme a rede e bloqueie acessos públicos. Em **Ajustes → WhatsApp** no APK ou na web, informe a URL base HTTPS e o mesmo token. Na web, clique **Ver conexão e QR do WhatsApp** e leia o QR no WhatsApp do telefone que enviará as mensagens. Credenciais de sessão ficam no diretório privado e não devem ir ao Git.
+Configure o ambiente do processo:
 
-A API interna aceita `POST /send` com `{ "id", "to": "+5511...", "message" }`, responde 202 após submissão e oferece `GET /status` com conexão e QR em data URL. Ambos exigem `Authorization: Bearer`. A web recebe o estado/QR por proxy autenticado no APK (`/api/v1/bridge`); não abre outra interface pública. IDs são reservados em disco antes do envio para evitar repetição automática. Uma falha entre reserva e confirmação é incerta e requer inspeção manual. Use um processo supervisionado (systemd/PM2) para reiniciar a ponte caso necessário; isso não é requisito para a web do APK.
+| Variável | Finalidade / padrão |
+| --- | --- |
+| `WINTERHOLD_BRIDGE_TOKEN` | Obrigatória; ao menos 32 caracteres aleatórios. |
+| `WINTERHOLD_BRIDGE_HOST` | Endereço de escuta, padrão `127.0.0.1`. |
+| `WINTERHOLD_BRIDGE_PORT` | Porta TCP, padrão `8791`. |
+| `WINTERHOLD_BRIDGE_DATA` | Diretório privado persistente, padrão `./private-session`. |
 
-**Limite atual:** o runtime Node/Baileys não foi integrado nem testado dentro do APK; portanto, WhatsApp requer um processo Node separado e rede HTTPS até ele. O envio real e o pareamento precisam ser verificados com uma conta de teste antes de uso contínuo.
+Inicie com `npm start` nesse ambiente. Preserve os arquivos de sessão e não os envie ao Git. O diretório pode conter autenticação WhatsApp e IDs de tentativas.
+
+Para acesso do APK a outro host, disponibilize a ponte por HTTPS, com certificado válido, e restrinja o acesso na infraestrutura. O servidor Node implementa HTTP; a terminação HTTPS externa deve ser configurada no ambiente de hospedagem. O host padrão de loopback não fica acessível diretamente por outra máquina.
+
+Em Ajustes → WhatsApp, configure a URL base HTTPS e o mesmo token. A URL não deve conter `/send`, query, fragmento ou usuário embutido. Token vazio no formulário mantém o anterior. Um supervisor de processo pode ser usado nessa hospedagem; o ciclo de vida do runtime integrado já pertence ao APK.
+
+## API privada
+
+Todas as rotas exigem `Authorization: Bearer TOKEN_DA_PONTE`.
+
+| Método | Rota | Comportamento |
+| --- | --- | --- |
+| GET | `/status` | Retorna `connection` e QR em data URL PNG, quando disponível. |
+| POST | `/relink` | Solicita novo pareamento; retorna `202` com `pairing_requested`. |
+| POST | `/send` | Recebe ID único, destinatário e texto. |
+
+Corpo de envio ilustrativo:
+
+```json
+{
+  "id": "evento:contato:WHATSAPP",
+  "to": "+5511999999999",
+  "message": "Winterhold | [TESTE SIMULADO] Mensagem de bancada"
+}
+```
+
+O ID aceita 1–180 caracteres de letras/números/underscore, `:` e `-`; o telefone usa E.164; a mensagem tem de 1 a 1500 caracteres. O corpo acumulado é limitado a 8192 caracteres. Há apenas envio de texto para destinatário individual.
+
+- `202 submitted`: a chamada de submissão foi concluída.
+- `202 already_reserved`: o ID já consta do registro; isso não comprova entrega de uma tentativa anterior.
+- `401`: token inválido.
+- `400`: campos inválidos.
+- `503`: sessão desconectada ou falha incerta de envio.
+
+Os IDs são reservados em disco antes do envio. Não há repetição automática de uma tentativa incerta. Confira o destino antes de um novo teste para evitar duplicidade.
+
+## Reconexão e limites
+
+O estado pode ser `starting`, `pairing`, `connected`, `disconnected`, `reconnecting` ou `logged_out`. Fechamentos recuperáveis usam espera progressiva de reconexão; `logged_out` requer novo pareamento. O runtime iniciado não significa que a conta esteja vinculada.
+
+Baileys é uma integração não oficial. Mudanças do protocolo ou restrições da conta podem exigir atualização e novo pareamento. `submitted` não comprova entrega ou leitura final.
+
+Consulte o [manual principal](../../README.md) para regras de alertas, identificação de mensagens simuladas, configuração de destinatários, segurança e diagnóstico por ADB.

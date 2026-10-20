@@ -24,6 +24,8 @@ pio device monitor -d backend
 
 O JSON publicado usa `device_id`, `timestamp` UTC, `temperatura_c`, `umidade_pct` e `tensao_rms_v`. Leituras invalidas aparecem como `null`; sem sincronizacao de horario, `timestamp` tambem e `null`.
 
-O APK e a central e escuta MQTT diretamente na porta 1883, sem broker externo ou Termux. Ative **Mostrar leituras reais** para ver o ESP32 no APK e na web `http://IP_DO_CELULAR:8790/`. A central usa o horario de recebimento quando o firmware nao sincronizou `timestamp`; valores nulos nao geram alerta para aquela medida. Este firmware ainda nao tem fila local: leituras feitas enquanto Wi-Fi ou MQTT estiver desconectado nao sao reenviadas.
+O APK é a central e escuta MQTT diretamente na porta 1883, sem broker externo ou Termux. Desative **Ajustes → Usar leituras fictícias** para ver os ESP32 no modo real, no APK e na web `https://IP_DO_CELULAR:8792/`. Entre com usuário e senha cadastrados no celular e confira a impressão do certificado. A central sempre usa a hora de recebimento do Android, independentemente do `timestamp` enviado pelo firmware; valores nulos não geram alerta para aquela medida. Este firmware ainda não tem fila local: leituras feitas enquanto Wi-Fi ou MQTT estiver desconectado não são reenviadas.
+
+Veja o [manual completo](../README.md) para regras de validação, ambientes, alertas, acesso web e diagnóstico.
 
 Antes de ligar o modulo a rede eletrica, valide isolamento, alimentacao, protecao e faixa do sinal no ADC do ESP32. O GPIO nao pode receber tensao acima do limite da placa.
