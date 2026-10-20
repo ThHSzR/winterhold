@@ -49,10 +49,18 @@ adb('root');adb('wait-for-device')
 adb('forward','tcp:18790','tcp:8790')
 pid=adb('shell','pidof',package);adb('shell','kill','-9',pid)
 wait_for(recovered)
-print('START_STICKY and persisted settings passed')
+print('START_STICKY and persisted settings passed',flush=True)
+# Android 11 persists the PackageManager "stopped/not launched" flags asynchronously.
+# Reboot only after the real activity launch is durable; otherwise an immediate
+# emulator reboot can restore the old force-stopped flag and skip BOOT_COMPLETED.
+def launch_state_persisted():
+    restriction=ET.fromstring(adb('shell','cat','/data/system/users/0/package-restrictions.xml'))
+    entry=next((item for item in restriction.findall('pkg') if item.get('name')==package),None)
+    return entry is not None and entry.get('stopped')!='true' and entry.get('nl')!='true'
+wait_for(launch_state_persisted,60)
 adb('reboot');adb('wait-for-device')
 wait_for(lambda:adb('shell','getprop','sys.boot_completed')=='1',180)
 adb('shell','wm','dismiss-keyguard')
 adb('forward','tcp:18790','tcp:8790')
 wait_for(recovered,240)
-print('BOOT_COMPLETED and password login after reboot passed')
+print('BOOT_COMPLETED and password login after reboot passed',flush=True)

@@ -3,7 +3,7 @@ name: Android demo
 on:
   pull_request:
   push:
-    branches: [APK, main, feat/issue-2-integrated-central]
+    branches: [APK, main]
   workflow_dispatch:
 
 permissions:
