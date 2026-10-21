@@ -2,7 +2,7 @@
 
 O APK ARM64 da versão `0.7-integrated-central` inclui Node 24.18.0 e Baileys 6.7.24. O aplicativo prepara os módulos privados, inicia e supervisiona o processo e mostra o QR no APK e na web autenticada. **Termux, PM2 e um servidor separado não são requisitos para esse APK.**
 
-O runtime foi verificado no Galaxy A30 até a geração do QR. O proprietário adiou o pareamento; envio a um destinatário real e recuperação de uma sessão já pareada continuam pendentes. Veja o [registro de validação](../../docs/ISSUE_2.md).
+O runtime foi verificado no Galaxy A30 e a sessão foi posteriormente observada conectada. O recebimento real continua em validação: foi diagnosticada uma diferença entre o número brasileiro com nono dígito e o identificador canônico retornado pelo WhatsApp, ainda não resolvida pelo envio atual. Veja o [registro de validação](../../docs/ISSUE_2.md).
 
 ## Uso integrado no Android
 

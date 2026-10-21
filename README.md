@@ -10,7 +10,7 @@ Este manual descreve a implementação presente na `main`, versão Android **`0.
 
 > **Demonstração também pode enviar mensagens reais.** Ao ativá-la no APK ou na web, você autoriza que violações e normalizações fictícias enviem SMS, e-mail e WhatsApp aos destinatários configurados. As mensagens automáticas recebem `[SIMULADO]`; os testes explícitos recebem `[TESTE SIMULADO]`.
 
-> **Estado da validação:** a central, o runtime integrado até a geração do QR, o acesso HTTPS e os testes de entrega com receptor local foram verificados. O pareamento de uma conta WhatsApp e o envio a um destinatário real ficaram para uma etapa posterior. Leia [validação e limitações](#validacao) antes de interpretar um recurso implementado como uma entrega externa já comprovada.
+> **Estado da validação:** a central, o runtime integrado, o acesso HTTPS e os testes de entrega com receptor local foram verificados. A sessão WhatsApp também foi observada conectada no A30, mas o recebimento real ainda está em validação, com uma divergência de identificador de destinatário diagnosticada. Leia [validação e limitações](#validacao) para os resultados e pontos em acompanhamento.
 
 ## Índice
 
@@ -1459,14 +1459,15 @@ Compare com o hash do artefato/build que você pretende instalar. Consulte [dist
 
 ### 21.2. O que continua dependente de validação externa
 
-O proprietário adiou o pareamento WhatsApp. Assim, ainda não se considera comprovado nesse aparelho:
+Após o pareamento inicialmente adiado, um diagnóstico posterior observou a ponte conectada no A30. A consulta de número no próprio WhatsApp retornou um identificador sem o nono dígito, diferente do identificador construído diretamente pelo servidor atual. O tratamento desse endereço permanece em acompanhamento; esta versão de correção dos formulários não altera o envio WhatsApp.
 
-1. Vinculação concluída de uma conta remetente.
-2. Envio e recebimento em um destinatário WhatsApp real.
-3. Preservação de uma sessão já pareada após boot.
-4. Recuperação dessa sessão pareada após perda de rede.
+Ainda não se considera comprovado nesse aparelho:
 
-SMS real depende de SIM, permissão, serviço de operadora e destinatário. SMTP externo depende de credenciais e servidor utilizáveis. A existência dos respectivos clientes e dos testes locais não equivale à validação dessas entregas reais.
+1. Envio e recebimento em um destinatário WhatsApp real.
+2. Preservação de uma sessão já pareada após boot.
+3. Recuperação dessa sessão pareada após perda de rede.
+
+O proprietário confirmou funcionamento de SMS em um Galaxy A73 com chip. No A30, os requisitos de SIM e permissão continuam dependendo da instalação. O SMTP externo foi alcançado, mas respondeu `535` na autenticação; é necessário conferir credenciais e acesso a aplicativos externos no provedor. Testes locais não equivalem a confirmação de entrega externa.
 
 O documento [docs/ISSUE_2.md](docs/ISSUE_2.md) registra a implementação e o escopo do aceite físico pendente da [issue #2](https://github.com/ThHSzR/winterhold/issues/2).
 
