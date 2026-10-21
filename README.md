@@ -214,6 +214,8 @@ Portanto, **a seleção de ambiente e o modo não são preferências privadas de
 
 A web consulta o estado aproximadamente a cada **5 segundos**. Após uma ação bem-sucedida, usa imediatamente a resposta atualizada. Se perder contato com o APK, mostra erro e tenta restabelecer a conexão; não substitui silenciosamente a central por dados fictícios.
 
+Durante as atualizações de dados, os formulários em edição preservam os valores, o foco e a posição do cursor. Isso inclui senhas ainda não salvas e leituras fictícias. Uma gravação bem-sucedida atualiza o formulário correspondente e limpa os campos de segredo; se a gravação for recusada, o preenchimento é mantido para correção.
+
 ### 4.3. Diferenças de capacidade
 
 | Operação | APK | Web autenticada |

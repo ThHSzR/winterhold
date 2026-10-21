@@ -53,7 +53,7 @@ async function refreshFromApk() {
     connectionError(`Conexão com o APK perdida. ${error.message}`);
   }
 }
-async function sendAction(payload, previewAction) {
+async function sendAction(payload, previewAction, savedFormId = null) {
   if (backend === 'android') {
     try {
       const response = await fetch('/api/v1/action', {
@@ -73,7 +73,7 @@ async function sendAction(payload, previewAction) {
     }
   } else if (backend === 'preview') previewAction();
   else return false;
-  render();
+  render(savedFormId);
   return true;
 }
 async function boot() {
@@ -310,7 +310,29 @@ function settingsPage() {
       <p>Credenciais são guardadas no Android e não são devolvidas pela API. Use HTTPS na ponte; HTTP só é aceito para 127.0.0.1 no aparelho.</p></section>`;
 }
 
-function render() {
+// Keep edited form nodes (including passwords, partial numbers and selection)
+// in the page while replacing the surrounding live data. Drafts stay in the DOM.
+function updateContent(markup, savedFormId = null) {
+  const focused = document.activeElement;
+  const forms = [...content.querySelectorAll('form')].filter(form =>
+    form.id !== savedFormId && (form.dataset.dirty === 'true' || form.contains(focused)));
+  const selection = forms.some(form => form.contains(focused)) && focused.selectionStart != null
+    ? [focused.selectionStart, focused.selectionEnd, focused.selectionDirection] : null;
+  content.innerHTML = markup;
+  for (const form of forms) content.querySelector(`#${form.id}`)?.replaceWith(form);
+  if (forms.some(form => form.contains(focused)) && content.contains(focused)) {
+    focused.focus({ preventScroll: true });
+    if (selection) focused.setSelectionRange(...selection);
+  }
+}
+for (const eventName of ['input', 'change']) {
+  document.addEventListener(eventName, event => {
+    const form = event.target.form;
+    if (form && content.contains(form)) form.dataset.dirty = 'true';
+  });
+}
+
+function render(savedFormId = null) {
   document.querySelector('#logout-button').hidden = backend !== 'android';
   if (backend === 'loading' || backend === 'error' || backend === 'locked') return;
   const page = currentPage();
@@ -321,7 +343,7 @@ function render() {
   document.title = `${pages[page][0]} · Winterhold`;
   document.querySelector('.demo-badge').innerHTML = `<span class="pulse"></span>${backend === 'android' ? 'CENTRAL ANDROID' : 'PRÉVIA'}`;
   document.querySelector('.sidebar-note').innerHTML = `<span class="pulse"></span><strong>${backend === 'android' ? (state.mode === 'demo' ? 'DEMONSTRAÇÃO' : 'ESP32 / MQTT') : 'PRÉVIA'}</strong><span>${backend === 'android' && state.mode === 'esp' ? escapeHtml(state.selectedDeviceId ? environmentName(state.selectedDeviceId) : 'Aguardando leituras') : escapeHtml(environmentName(state.selectedDeviceId))}</span>`;
-  content.innerHTML = ({ inicio: overview, ambientes: environmentsPage, historico: historyPage, alertas: alertsPage, equipe: peoplePage, ajustes: settingsPage })[page]();
+  updateContent(({ inicio: overview, ambientes: environmentsPage, historico: historyPage, alertas: alertsPage, equipe: peoplePage, ajustes: settingsPage })[page](), savedFormId);
   if (dialog) renderDialog();
 }
 function openDialog(type, id = null) {
@@ -565,7 +587,7 @@ document.addEventListener('submit', async event => {
     const id = String(fields.get('id'));
     const [temperature, humidity, voltage] = ['temperature', 'humidity', 'voltage'].map(key => Number(fields.get(key)));
     if (await sendAction({ type: 'setDemoReading', id, temperature, humidity, voltage },
-      () => setDemoReading(state, id, temperature, humidity, voltage))) {
+      () => setDemoReading(state, id, temperature, humidity, voltage), event.target.id)) {
       await sendAction({ type: 'selectedDevice', value: id }, () => selectDemoDevice(state, id));
     }
   }
@@ -576,7 +598,7 @@ document.addEventListener('submit', async event => {
     if (await sendAction(payload, () => {
       Object.assign(state.settings, { smtpHost: payload.smtpHost, smtpUser: payload.smtpUser,
         smtpFrom: payload.smtpFrom, bridgeUrl: payload.bridgeUrl });
-    })) { connectionBanner.hidden = false; connectionBanner.textContent = 'Configurações salvas no celular.'; }
+    }, event.target.id)) { connectionBanner.hidden = false; connectionBanner.textContent = 'Configurações salvas no celular.'; }
   }
 });
 
