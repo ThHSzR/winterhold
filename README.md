@@ -1,12 +1,12 @@
 # Winterhold — manual completo da aplicação
 
-**[Baixar o APK Android](https://raw.githubusercontent.com/ThHSzR/winterhold/main/dist/winterhold-demo-debug.apk)** · [Código Android](android/) · [Firmware ESP32](backend/) · [Interface web](web/)
+**[Baixar o APK Android](https://raw.githubusercontent.com/ThHSzR/winterhold/main/dist/winterhold-demo-debug.apk)** · [Releases](https://github.com/ThHSzR/winterhold/releases) · [Licença MIT](LICENSE) · [Código Android](android/) · [Firmware ESP32](backend/) · [Interface web](web/)
 
 O Winterhold é uma central de monitoramento de **temperatura, umidade e tensão elétrica por ambiente**. Um ESP32 coleta as medidas e as publica por MQTT. Um celular Android recebe as amostras, avalia os limites de cada ambiente, registra eventos, envia notificações e disponibiliza um painel web na rede.
 
 O próprio APK executa a central, o servidor web, o receptor MQTT e, em ARM64, o Node/Baileys usado para WhatsApp. A operação dessa versão não exige Termux, PM2, um broker MQTT separado ou um computador permanentemente ligado. A interface nativa e os navegadores conectados trabalham sobre o estado mantido no celular.
 
-Este manual descreve a implementação presente na `main`, versão Android **`0.7-integrated-central`**, código **7**. Os nomes de campos e ações da API são apresentados como aparecem no código. Os exemplos usam endereços e credenciais fictícios.
+Este manual descreve a implementação presente na `main`, versão Android **`0.7.1`**, código **8**. Os nomes de campos e ações da API são apresentados como aparecem no código. Os exemplos usam endereços e credenciais fictícios.
 
 > **Demonstração também pode enviar mensagens reais.** Ao ativá-la no APK ou na web, você autoriza que violações e normalizações fictícias enviem SMS, e-mail e WhatsApp aos destinatários configurados. As mensagens automáticas recebem `[SIMULADO]`; os testes explícitos recebem `[TESTE SIMULADO]`.
 
@@ -1317,6 +1317,8 @@ O APK ARM64 validado durante a implementação tinha aproximadamente **58,36 MiB
 `android/debug.keystore` é uma chave pública de desenvolvimento usada para manter atualizações de debug compatíveis. Ela não deve representar identidade de uma distribuição de produção.
 
 Os módulos e bibliotecas possuem licenças próprias; os pacotes do runtime incluem avisos e o lockfile registra dependências, incluindo libsignal sob GPL-3.0. Revise os termos aplicáveis antes de redistribuir uma versão derivada.
+
+O código original do Winterhold é disponibilizado sob a [licença MIT](LICENSE). Essa licença não substitui as licenças de terceiros incluídos no APK. Consulte [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) para as origens, licenças e referências de código-fonte das dependências.
 
 <a id="diagnostico"></a>
 
