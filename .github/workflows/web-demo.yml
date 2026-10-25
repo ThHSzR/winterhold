@@ -1,0 +1,20 @@
+name: Web demo
+
+on:
+  push:
+    branches: [APK]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax
+        run: node --check web/app.js && node --check web/demo.js && node --check web/server.mjs
+      - name: Tests
+        working-directory: web
+        run: npm test

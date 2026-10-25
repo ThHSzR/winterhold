@@ -1,0 +1,3 @@
+# Interface web da central Android
+
+A arquitetura atual, instruções e limites estão em [README](../README.md), [guia Android](../android/README.md) e [guia web](../web/README.md). O Android é a central MQTT e a única interface web remota. Todos os ajustes do app, exceto a gestão de usuários web, estão na página autenticada. Dados demo com cinco ambientes ficam disponíveis sem ESP; leituras e eventos reais permanecem separados. Saúde do telefone vem do Android. WhatsApp, se habilitado, usa a [ponte Node/Baileys](../backend/whatsapp/README.md); o homelab não é fonte de dados de serviços externos.
