@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <DHT.h>
 #include <PubSubClient.h>
-#include <WiFi.h>
+#include <ESP8266WiFi.h>
 #include <math.h>
 #include <time.h>
 
@@ -31,7 +31,9 @@ float lerTensaoRms() {
   uint32_t quantidadeAmostras = 0;
 
   while (millis() - inicioAmostragem < JANELA_AMOSTRAGEM_TENSAO_MS) {
-    const float tensaoAmostra = analogReadMilliVolts(ZMPT_PIN) / 1000.0f;
+    // O ADC do ESP8266 retorna valores brutos de 10 bits. A conversao final
+    // para a tensao da rede e feita pelo fator de calibracao do ZMPT101B.
+    const float tensaoAmostra = static_cast<float>(analogRead(ZMPT_PIN));
     soma += tensaoAmostra;
     somaQuadrados += tensaoAmostra * tensaoAmostra;
     ++quantidadeAmostras;
@@ -117,9 +119,6 @@ void publicarLeitura() {
 void setup() {
   Serial.begin(115200);
   sensorTemperaturaUmidade.begin();
-  analogReadResolution(12);
-  analogSetPinAttenuation(ZMPT_PIN, ADC_11db);
-
   WiFi.mode(WIFI_STA);
   clienteMqtt.setServer(MQTT_HOST, MQTT_PORT);
   snprintf(topicoMqtt, sizeof(topicoMqtt), "%s/%s/leituras", MQTT_TOPIC_PREFIX, DEVICE_ID);
