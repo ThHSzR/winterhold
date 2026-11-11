@@ -1,8 +1,8 @@
 # Winterhold — manual completo da aplicação
 
-**[Baixar o APK Android](https://raw.githubusercontent.com/ThHSzR/winterhold/main/dist/winterhold-demo-debug.apk)** · [Releases](https://github.com/ThHSzR/winterhold/releases) · [Licença MIT](LICENSE) · [Código Android](android/) · [Firmware ESP32](backend/) · [Interface web](web/)
+**[Baixar o APK Android](https://raw.githubusercontent.com/ThHSzR/winterhold/main/dist/winterhold-demo-debug.apk)** · [Releases](https://github.com/ThHSzR/winterhold/releases) · [Licença MIT](LICENSE) · [Código Android](android/) · [Firmware ESP8266](backend/) · [Interface web](web/)
 
-O Winterhold é uma central de monitoramento de **temperatura, umidade e tensão elétrica por ambiente**. Um ESP32 coleta as medidas e as publica por MQTT. Um celular Android recebe as amostras, avalia os limites de cada ambiente, registra eventos, envia notificações e disponibiliza um painel web na rede.
+O Winterhold é uma central de monitoramento de **temperatura, umidade e tensão elétrica por ambiente**. O firmware incluído neste repositório coleta as medidas em uma placa ESP8266/NodeMCU v2 e as publica por MQTT. Um celular Android recebe as amostras, avalia os limites de cada ambiente, registra eventos, envia notificações e disponibiliza um painel web na rede. A central aceita outros dispositivos que publiquem no mesmo contrato MQTT; o rótulo **ESP32 / MQTT** ainda aparece na interface.
 
 O próprio APK executa a central, o servidor web, o receptor MQTT e, em ARM64, o Node/Baileys usado para WhatsApp. A operação dessa versão não exige Termux, PM2, um broker MQTT separado ou um computador permanentemente ligado. A interface nativa e os navegadores conectados trabalham sobre o estado mantido no celular.
 
@@ -29,7 +29,7 @@ Este manual descreve a implementação presente na `main`, versão Android **`0.
 13. [Usuários, senhas, sessões e segurança](#seguranca)
 14. [Serviço Android, bateria e reinicialização](#servico)
 15. [Histórico persistente, retenção e atualização](#persistencia)
-16. [ESP32, sensores, firmware e MQTT](#esp32)
+16. [ESP8266, sensores, firmware e MQTT](#esp32)
 17. [API HTTP/HTTPS da central](#api)
 18. [Prévia web independente](#previa)
 19. [Compilação, testes e integração contínua](#desenvolvimento)
@@ -46,7 +46,7 @@ Este manual descreve a implementação presente na `main`, versão Android **`0.
 
 | Componente | Responsabilidade | Onde executa |
 | --- | --- | --- |
-| ESP32 | Lê DHT22 e sinal analógico do ZMPT101B; monta JSON; publica MQTT. | Microcontrolador de cada ambiente. |
+| ESP8266/NodeMCU v2 | Lê DHT22 e sinal analógico do ZMPT101B; monta JSON; publica MQTT. | Microcontrolador de cada ambiente neste firmware. |
 | Central Android | Recebe MQTT; valida medidas; mantém ambientes, contatos e histórico; decide quando gerar alertas. | Processo do APK. |
 | Aplicativo nativo | Mostra as telas e configura a central; administra as contas web. | Kotlin / Jetpack Compose no celular. |
 | Servidor web | Entrega HTML, CSS e JavaScript e oferece a API autenticada. | Dentro do APK. |
@@ -56,7 +56,7 @@ Este manual descreve a implementação presente na `main`, versão Android **`0.
 
 ```mermaid
 flowchart LR
-    DHT[DHT22] --> ESP[ESP32 por ambiente]
+    DHT[DHT22] --> ESP[ESP8266 por ambiente]
     ZMPT[ZMPT101B calibrado] --> ESP
     ESP -->|MQTT 3.1.1 / TCP 1883| CENTRAL[Central no APK Android]
     UI[Telas nativas Compose] <--> CENTRAL
@@ -86,7 +86,7 @@ Fechar uma aba do navegador não interrompe esse fluxo. Fechar a tela do aplicat
 
 | Situação | Fonte das leituras | Persistência | Mensagens externas |
 | --- | --- | --- | --- |
-| APK em modo real | Publicações MQTT dos ESP32. | No armazenamento privado do Android. | Conforme eventos, filtros, permissões e integrações. |
+| APK em modo real | Publicações MQTT dos dispositivos configurados. | No armazenamento privado do Android. | Conforme eventos, filtros, permissões e integrações. |
 | APK em demonstração | Cinco ambientes fictícios; alterações manuais e automáticas. | No celular, com históricos separados dos reais. | Podem ocorrer de verdade, com identificação de simulação. |
 | Prévia independente em `web/` | Simulação JavaScript no navegador. | Somente memória da página. | Não executa envios. |
 
@@ -102,7 +102,7 @@ O modo de visualização não desliga o receptor MQTT. Se a central estiver ativ
 | --- | --- |
 | Aplicativo e central | Android 8.0 ou superior, API mínima 26; armazenamento disponível. |
 | Runtime WhatsApp integrado distribuído | Aparelho ARM64, ABI `arm64-v8a`; internet para a conexão WhatsApp. |
-| Telemetria real | ESP32 com o firmware, sensores e acesso à rede da central. |
+| Telemetria real | ESP8266/NodeMCU v2 com o firmware fornecido, sensores e acesso à rede da central; outros dispositivos precisam cumprir o contrato MQTT. |
 | Painel web | Navegador com JavaScript e acesso ao IP do Android; usuário e senha cadastrados no APK. |
 | SMS | Hardware de telefonia, SIM e serviço de SMS utilizáveis, permissão `SEND_SMS`. |
 | E-mail | Acesso ao servidor SMTP; TLS implícito na porta 465; usuário, senha e remetente. |
@@ -148,13 +148,13 @@ A senha inicial não fica disponível para consulta permanente. Se você fechou 
 
 1. Em **Ajustes → ESP32 / MQTT**, copie a chave MQTT.
 2. Configure Wi-Fi, IP do celular, usuário `winterhold`, chave e `DEVICE_ID` no [arquivo de configuração do firmware](backend/include/config.h).
-3. Grave o ESP32.
+3. Grave a placa ESP8266/NodeMCU v2.
 4. Em **Ambientes**, cadastre o mesmo ID ou aguarde a primeira amostra válida.
 5. Personalize nome, ícone e faixas.
 6. Fixe o ambiente como favorito para facilitar a seleção no início e na web.
 7. Confira o horário da amostra e o estado online.
 
-Para explorar sem ESP32, siga o [roteiro de demonstração](#demonstracao).
+Para explorar sem placa e sensores, siga o [roteiro de demonstração](#demonstracao).
 
 <a id="rede"></a>
 
@@ -164,14 +164,14 @@ Para explorar sem ESP32, siga o [roteiro de demonstração](#demonstracao).
 | --- | --- | --- |
 | `8792` | HTTPS da central | Painel e API autenticada na rede. Endereço normal de uso. |
 | `8790` | HTTP da central | Arquivos estáticos e `/healthz`; login e API apenas para conexões de loopback. Usada com encaminhamento ADB para diagnóstico. |
-| `1883` | Entrada MQTT | ESP32 publica com usuário e chave. Transporte TCP sem TLS nesta implementação. |
+| `1883` | Entrada MQTT | O dispositivo publica com usuário e chave. Transporte TCP sem TLS nesta implementação. |
 | `8791` | Ponte Baileys integrada | Somente `127.0.0.1` no Android; acesso com token. A central intermedeia o acesso do usuário. |
 | `8787` | Prévia web de desenvolvimento | Servidor Node opcional no computador; não é a central do APK. |
 | `465` | SMTP de saída | Conexão iniciada pelo Android até o servidor de e-mail. Não é uma porta de escuta do APK. |
 
 ### 3.1. Descoberta de endereço
 
-O aplicativo lista endereços IPv4 das interfaces de rede, descartando loopback e endereços link-local, com preferência por endereços privados. Mais de um endereço pode aparecer quando existem várias interfaces. Use aquele alcançável a partir do navegador e do ESP32.
+O aplicativo lista endereços IPv4 das interfaces de rede, descartando loopback e endereços link-local, com preferência por endereços privados. Mais de um endereço pode aparecer quando existem várias interfaces. Use aquele alcançável a partir do navegador e do dispositivo MQTT.
 
 O endereço pode mudar quando o roteador renova o DHCP ou o celular troca de rede. Uma reserva DHCP no roteador evita ter de alterar frequentemente `MQTT_HOST`. A aplicação não configura o roteador nem oferece descoberta mDNS nesta versão.
 
@@ -269,7 +269,7 @@ O horário recente comprova recepção de amostras, não a calibração do senso
 
 ### 5.4. Central, eventos recentes e saúde do celular
 
-O painel mostra o vínculo ESP32 → celular e a disponibilidade da central. O início apresenta eventos recentes do contexto selecionado; a tela Alertas reúne os eventos do modo atual.
+O painel mostra o vínculo entre o dispositivo e o celular e a disponibilidade da central. O início apresenta eventos recentes do contexto selecionado; a tela Alertas reúne os eventos do modo atual.
 
 Na web, **Saúde do celular central** traz:
 
@@ -286,7 +286,7 @@ Essas informações descrevem o telefone que executa a central. O Winterhold nã
 
 ## 6. Tela Ambientes
 
-Cada ambiente real é identificado pelo `DEVICE_ID` do firmware. O nome amigável, o ícone e as faixas são configurados na central e não precisam ser gravados no ESP32.
+Cada ambiente real é identificado pelo `DEVICE_ID` do firmware. O nome amigável, o ícone e as faixas são configurados na central e não precisam ser gravados no microcontrolador.
 
 ### 6.1. Criar um ambiente real
 
@@ -527,13 +527,15 @@ Esses dois últimos controles aparecem no contexto demo. Retornar ao modo real p
 
 Mostra disponibilidade da entrada MQTT, porta 1883, usuário `winterhold` e chave gerada no aparelho. No APK há **Copiar chave MQTT**. A web autenticada também recebe e mostra essa chave; trate uma conta web como acesso à configuração da central.
 
-Não há formulário de troca de porta ou rotação da chave MQTT pela interface nesta versão. Alterar somente o nome de um ambiente não exige trocar a chave ou regravar o ESP32.
+Não há formulário de troca de porta ou rotação da chave MQTT pela interface nesta versão. Alterar somente o nome de um ambiente não exige trocar a chave ou regravar o microcontrolador.
 
 ### 10.5. Canais de alerta
 
 Os interruptores SMS, E-mail e WhatsApp são habilitações globais. Eles se combinam com os filtros de cada destinatário. Não dispensam telefone, e-mail, permissões, credenciais ou pareamento.
 
 No APK, quando necessário, **Permitir envio de SMS neste aparelho** solicita `SEND_SMS`. Na web, o estado aparece para consulta; a concessão ocorre no telefone.
+
+<a id="smtp"></a>
 
 ### 10.6. E-mail / SMTP TLS
 
@@ -547,6 +549,10 @@ No APK, quando necessário, **Permitir envio de SMS neste aparelho** solicita `S
 **Salvar SMTP** no APK ou **Salvar integrações** na web guarda a configuração no celular. Deixar a senha vazia conserva a anterior. O campo não retorna preenchido com o segredo salvo.
 
 O formulário web reúne SMTP e ponte WhatsApp na mesma ação. Ao usá-lo por uma integração própria, envie também os valores públicos que deseja preservar; a ação não é uma atualização parcial genérica de todos os campos.
+
+Para uma caixa HostGator, identifique primeiro se ela usa **Titan** ou **e-mail cPanel**. No Titan, o host SMTP usual é `smtp.titan.email`; no cPanel, use o nome real do servidor da hospedagem, como `brXX.hostgator.com.br`, sem copiar esse exemplo literalmente. Em ambos os casos, o usuário costuma ser o endereço completo da caixa e a conexão do Winterhold é SSL/TLS na porta 465. A porta SMTP é uma conexão **de saída do Android**; não existe abertura de porta no roteador para esse envio. A HostGator lista a 465 entre as portas SMTP liberadas por padrão. Consulte [configuração cPanel da HostGator](https://suporte.hostgator.com.br/hc/pt-br/articles/30820322757779-Como-configurar-uma-conta-de-e-mail-no-ThunderBird), [configuração Titan](https://support.titan.email/hc/en-us/articles/900000215446-Configure-Titan-on-other-apps-using-IMAP-POP) e [portas padrão](https://suporte.hostgator.com.br/hc/pt-br/articles/30812710494739-Quais-portas-s%C3%A3o-liberadas-por-padr%C3%A3o-nos-servidores-na-HostGator-Brasil).
+
+Se o Titan exigir acesso por aplicativos externos, abra o [webmail Titan](https://app.titan.email), entre na conta, acesse **Configurações** e procure **Enable Titan on Other Apps**. Se aparecer **Configure 3rd party apps** em vez disso, o próprio Titan informa que o acesso já está habilitado. Com autenticação em duas etapas, use uma [senha de aplicativo](https://support.titan.email/hc/en-us/articles/59899461438233-Application-Password-in-Titan-for-Third-Party-Clients), se disponível para a conta. Esses passos não se aplicam a caixas cPanel. [Instrução do Titan](https://support.titan.email/hc/en-us/articles/25005307786905-Enable-Titan-on-other-apps).
 
 ### 10.7. WhatsApp / ponte Baileys
 
@@ -603,11 +609,11 @@ No APK, os campos numéricos aceitam vírgula convertida para ponto. Na API, os 
 
 ### 11.4. Simular desconexão e encerrar
 
-**Simular desconexão** registra um evento sem variável para o ambiente demo selecionado e suspende o avanço automático de todos os perfis enquanto a opção estiver ligada. Isso não desliga o Wi-Fi do telefone nem derruba as conexões reais dos ESP32.
+**Simular desconexão** registra um evento sem variável para o ambiente demo selecionado e suspende o avanço automático de todos os perfis enquanto a opção estiver ligada. Isso não desliga o Wi-Fi do telefone nem derruba as conexões reais dos dispositivos.
 
 A aplicação manual de uma leitura demo continua sendo uma ação possível mesmo com a simulação automática pausada ou a desconexão fictícia ligada. Esses controles são diferentes de parar o serviço da central.
 
-Para encerrar o ensaio, desligue **Usar leituras fictícias**. O modo real volta a mostrar os ESP32. Se o processo for reiniciado, o demo fica pausado e precisa ser reativado pelo operador.
+Para encerrar o ensaio, desligue **Usar leituras fictícias**. O modo real volta a mostrar os dispositivos. Se o processo for reiniciado, o demo fica pausado e precisa ser reativado pelo operador.
 
 <a id="entregas"></a>
 
@@ -630,6 +636,8 @@ Mensagens longas são divididas em partes. O estado fica `queued` durante o proc
 O cliente SMTP abre uma conexão TLS diretamente na **porta 465**, valida o certificado/hostname do servidor, faz `EHLO`, autentica com `AUTH LOGIN` e envia uma mensagem de texto UTF-8.
 
 Não há escolha de porta, STARTTLS na 587, OAuth SMTP, anexos ou templates HTML nesta versão. Use credenciais compatíveis com o método implementado. Um servidor que aceite a submissão ainda pode encaminhar a mensagem para spam, rejeitá-la posteriormente ou gerar um retorno fora do aplicativo.
+
+Se o teste retornar **SMTP `535`**, o servidor respondeu à tentativa de autenticação, mas recusou as credenciais. Confira usuário completo, senha ou senha de aplicativo e, no Titan, o acesso por aplicativos externos. Esse erro é diferente de uma falha de conexão com a porta 465. Não cole senhas, logs com credenciais ou a resposta completa da API em issues públicas.
 
 ### 12.4. WhatsApp integrado: funcionamento
 
@@ -869,18 +877,17 @@ Copiar preferências cifradas para outro aparelho não garante recuperar os segr
 
 <a id="esp32"></a>
 
-## 16. ESP32, sensores, firmware e MQTT
+## 16. ESP8266, sensores, firmware e MQTT
 
 ### 16.1. Hardware previsto e pinagem
 
-O firmware usa a placa `esp32dev` do PlatformIO com framework Arduino, sensor **DHT22** e módulo de medição **ZMPT101B**.
+O firmware distribuído usa a placa **NodeMCU v2 com ESP8266** (`nodemcuv2`, plataforma `espressif8266`) no PlatformIO, framework Arduino, sensor **DHT22** e módulo de medição **ZMPT101B**. O projeto original menciona ESP32, mas o arquivo [platformio.ini](backend/platformio.ini) e o código atual [main.cpp](backend/src/main.cpp) compilam para ESP8266. Para usar um ESP32, é necessário portar o firmware e conferir a pinagem e o ADC antes de gravá-lo.
 
 | Parâmetro | Padrão no código |
 | --- | --- |
 | Dados do DHT22 | GPIO 4, `DHT_PIN`. |
-| Entrada analógica do ZMPT101B | GPIO 34, `ZMPT_PIN`. |
-| Resolução ADC | 12 bits. |
-| Atenuação configurada | `ADC_11db` no pino de tensão. |
+| Entrada analógica do ZMPT101B | `A0`, `ZMPT_PIN`; confirme a faixa elétrica admitida pela placa específica. |
+| Resolução ADC | Leitura bruta de 10 bits (`analogRead`). |
 | Monitor serial | 115200 baud. |
 | Fator inicial de calibração | `ZMPT_CALIBRATION = 0.0f`. |
 
@@ -901,7 +908,7 @@ constexpr char DEVICE_ID[] = "sala-01";
 constexpr char MQTT_TOPIC_PREFIX[] = "winterhold";
 ```
 
-Use um `DEVICE_ID` único por ESP32. Não deixe dois dispositivos independentes publicarem como se fossem o mesmo ambiente. O prefixo esperado pelo APK é `winterhold`; alterá-lo apenas no firmware faz a telemetria ser rejeitada.
+Use um `DEVICE_ID` único por placa. Não deixe dois dispositivos independentes publicarem como se fossem o mesmo ambiente. O prefixo esperado pelo APK é `winterhold`; alterá-lo apenas no firmware faz a telemetria ser rejeitada.
 
 As credenciais ficam embutidas no firmware compilado. Não publique o arquivo com os valores reais de Wi-Fi ou MQTT. Os exemplos do repositório devem continuar com placeholders.
 
@@ -918,24 +925,24 @@ As credenciais ficam embutidas no firmware compilado. Não publique o arquivo co
 
 A publicação pode repetir a última temperatura/umidade em ciclos alternados porque o DHT é lido mais lentamente. A janela de tensão mede vários ciclos de uma forma de onda de 50/60 Hz; publicar a 1 Hz não é capturar todas as variações elétricas rápidas.
 
-Não há fila persistente no ESP32. Se Wi-Fi/MQTT estiver indisponível, as leituras daquele período não são reenviadas depois. O monitor serial informa conexão e sucesso/falha de publicação.
+Não há fila persistente no ESP8266. Se Wi-Fi/MQTT estiver indisponível, as leituras daquele período não são reenviadas depois. O monitor serial informa conexão e sucesso/falha de publicação.
 
 ### 16.4. Cálculo RMS e calibração
 
-Durante a janela de 200 ms, o firmware lê a tensão no ADC em volts e acumula soma e soma dos quadrados. Calcula:
+Durante a janela de 200 ms, o firmware lê amostras **brutas** do ADC de 10 bits e acumula soma e soma dos quadrados. Calcula:
 
 ```text
 media = soma / quantidade_de_amostras
 variancia = soma_dos_quadrados / quantidade_de_amostras - media²
-rms_do_sinal = sqrt(max(variancia, 0))
-tensao_publicada = rms_do_sinal × ZMPT_CALIBRATION
+rms_das_contagens = sqrt(max(variancia, 0))
+tensao_publicada = rms_das_contagens × ZMPT_CALIBRATION
 ```
 
 A subtração da média remove o deslocamento DC do sinal medido. O fator converte o RMS no ADC para a grandeza de referência desejada. Com fator menor ou igual a zero, o firmware retorna medida inválida e publica `tensao_rms_v: null`.
 
 Em um procedimento supervisionado, o fator inicial pode ser obtido da relação entre a leitura de referência e o RMS efetivamente medido no sinal do sensor. A precisão final depende do circuito, da calibração e da resposta do ADC; o projeto não entrega certificação metrológica ou detecção de transitórios.
 
-### 16.5. Compilar e gravar o ESP32
+### 16.5. Compilar e gravar o ESP8266
 
 Com PlatformIO instalado e o arquivo de configuração preenchido, execute na raiz:
 
@@ -945,7 +952,7 @@ pio run -d backend -t upload
 pio device monitor -d backend
 ```
 
-As dependências declaradas são DHT sensor library, Adafruit Unified Sensor e PubSubClient, conforme [platformio.ini](backend/platformio.ini). O ambiente padrão é `esp32dev`; adapte placa e porta à bancada utilizada.
+As dependências declaradas são DHT sensor library, Adafruit Unified Sensor e PubSubClient, conforme [platformio.ini](backend/platformio.ini). O ambiente configurado é `nodemcuv2`, e a porta de upload/monitor está definida como `/dev/ttyUSB*`; confirme qual porta serial sua placa usa. Um ESP32 exige outro ambiente PlatformIO e adaptação do firmware.
 
 ### 16.6. Contrato da publicação MQTT
 
@@ -979,7 +986,7 @@ O receptor é um endpoint mínimo para o firmware, com protocolo **MQTT 3.1.1**,
 
 Não implementa assinaturas, distribuição a outros clientes, QoS 1/2, mensagens retidas ou Last Will. Um `mosquitto_sub` não serve para observar o histórico nessa porta; use a interface ou `/api/v1/state`.
 
-Há até 8 conexões simultâneas, limite de pacote MQTT de 2048 bytes e timeout de leitura de socket de 45 segundos. O client ID aceito usa o mesmo padrão de caracteres do ID de dispositivo. O segredo é compartilhado pelos ESP32; não há credenciais/ACL individuais por ambiente.
+Há até 8 conexões simultâneas, limite de pacote MQTT de 2048 bytes e timeout de leitura de socket de 45 segundos. O client ID aceito usa o mesmo padrão de caracteres do ID de dispositivo. O segredo é compartilhado pelos dispositivos; não há credenciais/ACL individuais por ambiente.
 
 <a id="api"></a>
 
@@ -1110,7 +1117,7 @@ Esta ação cria ou atualiza `sala-01` **quando a central está no modo real**:
 }
 ```
 
-Para selecionar o perfil, envie separadamente `{"type":"selectedDevice","value":"sala-01"}`. Criar/editar por API não deve ser interpretado como receber uma amostra daquele ESP32.
+Para selecionar o perfil, envie separadamente `{"type":"selectedDevice","value":"sala-01"}`. Criar/editar por API não deve ser interpretado como receber uma amostra daquele dispositivo.
 
 ### 17.7. Exemplo de ensaio manual pela API
 
@@ -1175,7 +1182,7 @@ Uma resposta `already_reserved` indica que o ID já consta do registro; ela não
 
 ## 18. Prévia web independente
 
-A prévia permite desenvolver e conhecer o layout sem Android ou ESP32. Requer Node.js **20+** e não precisa instalar dependências do frontend, que usa módulos nativos do navegador e do Node.
+A prévia permite desenvolver e conhecer o layout sem Android ou sensores. Requer Node.js **20+** e não precisa instalar dependências do frontend, que usa módulos nativos do navegador e do Node.
 
 Na raiz do repositório:
 
@@ -1433,6 +1440,7 @@ Compare com o hash do artefato/build que você pretende instalar. Consulte [dist
 | Alertas não são enviados | Verifique transição nova, contato ativo, variável, interseção de canais, destino, permissões e configuração. |
 | Corrigi destino e o alerta antigo não chegou | Não existe reenvio automático do histórico. Faça um teste explícito após conferir o destino. |
 | `submitted`, mas pessoa não recebeu | É submissão, sem garantia de entrega final. Confira operadora, spam ou conta WhatsApp. |
+| SMTP `535` ao testar e-mail | O servidor recusou a autenticação: confira endereço completo, senha/senha de aplicativo e, no Titan, acesso de aplicativos externos. A porta 465 já respondeu. |
 | WhatsApp mostra QR, mas não envia | O QR precisa ser lido pelo proprietário e o estado precisa chegar a `connected`. |
 | Processo integrado indisponível | Confira ABI e se o APK contém o runtime preparado; avalie a ponte HTTPS externa. |
 | Ponte HTTP remota recusada | HTTP é permitido só para `127.0.0.1`/`localhost`; use URL HTTPS na alternativa remota. |
@@ -1512,7 +1520,7 @@ Os [planos web](docs/PLANO_WEB.md) e [plano visual Android](docs/PLANO_VISUAL_AP
 │   └── test-lifecycle.py          Recuperação e boot em emulador
 ├── backend/
 │   ├── include/config.h          Wi-Fi, MQTT, IDs, pinos e calibração
-│   ├── src/main.cpp              Firmware ESP32
+│   ├── src/main.cpp              Firmware ESP8266/NodeMCU v2
 │   ├── platformio.ini            Placa, framework e bibliotecas
 │   └── whatsapp/                 Servidor Baileys e dependências fixadas
 ├── web/                          Assets comuns à web do APK e à prévia
@@ -1562,7 +1570,7 @@ Os arquivos Kotlin abaixo estão em `android/app/src/main/java/br/eng/thsouza/wi
 | Eventos `click`, `change`, `submit`, `hashchange` e intervalo de 5 segundos | Traduzem controles em ações, navegação e atualização. |
 | [web/demo.js](web/demo.js): `createDemoState`, `selectDemoDevice`, `setDemoReading`, `advance`, `simulateAlert`, `setOffline`, `resolveAlert`, `addContact`, `toggleContactItem`, `routeAlert`, `health` | Estado e operações fictícias da prévia. |
 | [web/server.mjs](web/server.mjs): `createServer` | Entrega assets e saúde da prévia; valida porta e restringe métodos. |
-| [backend/src/main.cpp](backend/src/main.cpp): `setup`, `loop`, `conectarWifi`, `conectarMqtt`, `lerTensaoRms`, `publicarLeitura` | Inicialização, coleta, reconexão e publicação do ESP32. |
+| [backend/src/main.cpp](backend/src/main.cpp): `setup`, `loop`, `conectarWifi`, `conectarMqtt`, `lerTensaoRms`, `publicarLeitura` | Inicialização, coleta, reconexão e publicação do ESP8266. |
 | [backend/whatsapp/server.js](backend/whatsapp/server.js): `authenticated`, `connect`, `retry`, `reserve` e manipulador HTTP | Token, sessão Baileys, QR/reconexão, registro de IDs e submissão de texto. |
 | [android/prepare-runtime.py](android/prepare-runtime.py) | Verificação dos pacotes e preparação do runtime incluído no build. |
 
@@ -1577,7 +1585,7 @@ Para mudanças de regra, comece pelo `DemoStore`; para uma nova ação remota, c
 1. Instale uma versão identificada do APK e confirme assinatura/ABI.
 2. Abra o aplicativo, habilite a central e ajuste notificações/bateria.
 3. Crie contas web individuais e registre a impressão do certificado.
-4. Configure ESP32 com IDs estáveis e confira recepção de amostras.
+4. Configure os ESP8266 com IDs estáveis e confira recepção de amostras.
 5. Revise nome, faixas e favoritos de cada ambiente.
 6. Cadastre destinatários reais e selecione variáveis/canais.
 7. Configure SMTP, SMS e/ou pareie WhatsApp conforme os recursos utilizados.
@@ -1596,7 +1604,7 @@ Após trocar rede, atualizar APK ou reiniciar o telefone, confira o novo endere�
 | Termo | Significado |
 | --- | --- |
 | Central | Conjunto de serviços e estado executado pelo APK. |
-| Ambiente | Perfil identificado pelo ID do ESP32 ou por um ID demo fixo. |
+| Ambiente | Perfil identificado pelo ID do dispositivo MQTT ou por um ID demo fixo. |
 | Amostra / leitura | Temperatura, umidade e tensão associadas a um horário e dispositivo. |
 | Faixa | Intervalo inclusivo entre mínimo e máximo configurados. |
 | Violação | Valor válido abaixo do mínimo ou acima do máximo. |

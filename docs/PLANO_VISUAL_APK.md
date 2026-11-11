@@ -1,5 +1,7 @@
 # Plano visual do aplicativo Winterhold
 
+> Documento histórico da fase de protótipo. Para o funcionamento atual, consulte o [manual da `main`](../README.md). O firmware incluído hoje compila para ESP8266/NodeMCU v2; as referências a ESP32 abaixo registram o conceito original.
+
 **Fase:** demo visual para celular Android. **Plataforma:** Kotlin + Jetpack Compose. **Branch:** `APK`.
 
 ## Princípios da interface

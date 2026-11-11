@@ -1,12 +1,12 @@
 #pragma once
 
-constexpr char WIFI_SSID[] = "Jerry_IOT";
-constexpr char WIFI_PASSWORD[] = "minhavida12";
+constexpr char WIFI_SSID[] = "NOME_DA_REDE";
+constexpr char WIFI_PASSWORD[] = "SENHA_DA_REDE";
 
-constexpr char MQTT_HOST[] = "10.150.235.246";
+constexpr char MQTT_HOST[] = "192.168.1.100";
 constexpr uint16_t MQTT_PORT = 1883;
 constexpr char MQTT_USER[] = "winterhold";
-constexpr char MQTT_PASSWORD[] = "74977fbc93ce4560e4db817f8b7a46d91d73";
+constexpr char MQTT_PASSWORD[] = "CHAVE_COPIADA_DO_APK";
 
 constexpr char DEVICE_ID[] = "sala-01";
 constexpr char MQTT_TOPIC_PREFIX[] = "winterhold";
